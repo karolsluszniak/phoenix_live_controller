@@ -169,11 +169,9 @@ defmodule Phoenix.LiveController do
   `@event_handler true` and their name is the name of the event they handle.
 
       # lib/my_app_web/templates/article/*.html.leex
-
       <%= link "Delete", to: "#", phx_click: :delete, phx_value_id: article.id, data: [confirm: "Are you sure?"] %>
 
       # lib/my_app_web/live/article_live.ex
-
       defmodule MyAppWeb.ArticleLive do
         use Phoenix.LiveController
 
