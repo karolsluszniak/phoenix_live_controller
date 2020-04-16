@@ -421,11 +421,19 @@ defmodule Phoenix.LiveController do
       import unquote(__MODULE__)
 
       def mount(params, session, socket) do
-        action = socket.assigns.live_action
+        action =
+          socket.assigns[:live_action] ||
+            raise(
+              "#{inspect(__MODULE__)} called without action - mount it via route that specifies action"
+            )
 
         unless Enum.member?(__live_controller__(:actions), action),
           do:
-            raise("#{inspect(__MODULE__)} doesn't implement action mount for #{inspect(action)}")
+            raise(
+              "#{inspect(__MODULE__)} doesn't implement action mount for #{inspect(action)} - make sure that #{
+                action
+              } function is defined and annotated with `@action_mount true`"
+            )
 
         socket
         |> apply_session(session)
@@ -444,7 +452,9 @@ defmodule Phoenix.LiveController do
         unless Enum.any?(__live_controller__(:events), &(to_string(&1) == event_string)),
           do:
             raise(
-              "#{inspect(__MODULE__)} doesn't implement event handler for #{inspect(event_string)}"
+              "#{inspect(__MODULE__)} doesn't implement event handler for #{inspect(event_string)} - make sure that #{
+                event_string
+              } function is defined and annotated with `@event_handler true`"
             )
 
         event = String.to_atom(event_string)

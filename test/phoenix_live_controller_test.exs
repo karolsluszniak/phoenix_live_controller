@@ -16,9 +16,25 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :badactionnn)
 
-    assert_raise(RuntimeError, "SampleLive doesn't implement action mount for :badactionnn", fn ->
-      SampleLive.mount(%{}, %{}, socket)
-    end)
+    assert_raise(
+      RuntimeError,
+      "SampleLive doesn't implement action mount for :badactionnn - make sure that badactionnn function is defined and annotated with `@action_mount true`",
+      fn ->
+        SampleLive.mount(%{}, %{}, socket)
+      end
+    )
+  end
+
+  test "mounting without action" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert_raise(
+      RuntimeError,
+      "SampleLive called without action - mount it via route that specifies action",
+      fn ->
+        SampleLive.mount(%{}, %{}, socket)
+      end
+    )
   end
 
   test "handling events" do
@@ -35,9 +51,13 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
 
-    assert_raise(RuntimeError, "SampleLive doesn't implement event handler for \"badeventtt\"", fn ->
-      SampleLive.handle_event("badeventtt", %{}, socket)
-    end)
+    assert_raise(
+      RuntimeError,
+      "SampleLive doesn't implement event handler for \"badeventtt\" - make sure that badeventtt function is defined and annotated with `@event_handler true`",
+      fn ->
+        SampleLive.handle_event("badeventtt", %{}, socket)
+      end
+    )
   end
 
   test "applying session" do
@@ -102,7 +122,9 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
 
-    assert {:noreply, socket} = SampleLive.handle_event("create", %{"new_item" => "new", "redirect" => "1"}, socket)
+    assert {:noreply, socket} =
+             SampleLive.handle_event("create", %{"new_item" => "new", "redirect" => "1"}, socket)
+
     assert socket.redirected
     assert socket.assigns.items == [:old]
     refute Map.has_key?(socket.assigns, :before_event_handler_called)
@@ -139,6 +161,7 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :index, other: :x)
 
-    assert {:rendered, "index.html", %{live_action: :index, other: :x}} = SampleLive.render(socket.assigns)
+    assert {:rendered, "index.html", %{live_action: :index, other: :x}} =
+             SampleLive.render(socket.assigns)
   end
 end
