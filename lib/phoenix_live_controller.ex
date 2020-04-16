@@ -26,27 +26,18 @@ defmodule Phoenix.LiveController do
   Article articles ...` scaffold, powered by `Phoenix.LiveController`:
 
       # lib/my_app_web.ex
-
       defmodule MyAppWeb do
-        # ...
-
         def live do
           quote do
             use Phoenix.LiveController
-
             alias MyAppWeb.Router.Helpers, as: Routes
           end
         end
       end
 
       # lib/my_app_web/router.ex
-
       defmodule MyAppWeb.Router do
-        # ...
-
         scope "/", MyAppWeb do
-          # ...
-
           live "/articles", ArticleLive, :index
           live "/articles/new", ArticleLive, :new
           live "/articles/:id", ArticleLive, :show
@@ -55,7 +46,6 @@ defmodule Phoenix.LiveController do
       end
 
       # lib/my_app_web/live/article_live.ex
-
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live
 
@@ -145,12 +135,14 @@ defmodule Phoenix.LiveController do
   just like with Phoenix controller actions, their name is the name of the action they mount.
 
       # lib/my_app_web/router.ex
-
-      live "/articles", ArticleLive, :index
-      live "/articles/:id", ArticleLive, :show
+      defmodule MyAppWeb.Router do
+        scope "/", MyAppWeb do
+          live "/articles", ArticleLive, :index
+          live "/articles/:id", ArticleLive, :show
+        end
+      end
 
       # lib/my_app_web/live/article_live.ex
-
       defmodule MyAppWeb.ArticleLive do
         use Phoenix.LiveController
 
@@ -184,8 +176,6 @@ defmodule Phoenix.LiveController do
 
       defmodule MyAppWeb.ArticleLive do
         use Phoenix.LiveController
-
-        # ...
 
         @event_handler true
         def delete(socket, %{"id" => id}) do
@@ -420,61 +410,29 @@ defmodule Phoenix.LiveController do
 
       import unquote(__MODULE__)
 
-      def mount(params, session, socket) do
-        action =
-          socket.assigns[:live_action] ||
-            raise(
-              "#{inspect(__MODULE__)} called without action - mount it via route that specifies action"
-            )
+      def mount(params, session, socket),
+        do: unquote(__MODULE__)._mount(__MODULE__, params, session, socket)
 
-        unless Enum.member?(__live_controller__(:actions), action),
-          do:
-            raise(
-              "#{inspect(__MODULE__)} doesn't implement action mount for #{inspect(action)} - make sure that #{
-                action
-              } function is defined and annotated with `@action_mount true`"
-            )
+      def apply_session(socket, _session),
+        do: socket
 
-        socket
-        |> apply_session(session)
-        |> unless_redirected(&before_action_mount(&1, action, params))
-        |> unless_redirected(&action_mount(&1, action, params))
-        |> wrap_socket(&{:ok, &1})
-      end
+      def before_action_mount(socket, _name, _params),
+        do: socket
 
-      def apply_session(socket, _session), do: socket
+      def action_mount(socket, name, params),
+        do: apply(__MODULE__, name, [socket, params])
 
-      def before_action_mount(socket, _name, _params), do: socket
+      def handle_event(event_string, params, socket),
+        do: unquote(__MODULE__)._handle_event(__MODULE__, event_string, params, socket)
 
-      def action_mount(socket, name, params), do: apply(__MODULE__, name, [socket, params])
+      def before_event_handler(socket, _name, _params),
+        do: socket
 
-      def handle_event(event_string, params, socket) do
-        unless Enum.any?(__live_controller__(:events), &(to_string(&1) == event_string)),
-          do:
-            raise(
-              "#{inspect(__MODULE__)} doesn't implement event handler for #{inspect(event_string)} - make sure that #{
-                event_string
-              } function is defined and annotated with `@event_handler true`"
-            )
+      def event_handler(socket, name, params),
+        do: apply(__MODULE__, name, [socket, params])
 
-        event = String.to_atom(event_string)
-
-        socket
-        |> before_event_handler(event, params)
-        |> unless_redirected(&event_handler(&1, event, params))
-        |> wrap_socket(&{:noreply, &1})
-      end
-
-      def before_event_handler(socket, _name, _params), do: socket
-
-      def event_handler(socket, name, params), do: apply(__MODULE__, name, [socket, params])
-
-      defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
-      defp wrap_socket(misc, _wrapper), do: misc
-
-      def render(assigns = %{live_action: action}) do
-        unquote(view_module).render("#{action}.html", assigns)
-      end
+      def render(assigns = %{live_action: action}),
+        do: unquote(view_module).render("#{action}.html", assigns)
 
       defoverridable apply_session: 2,
                      before_action_mount: 3,
@@ -507,13 +465,55 @@ defmodule Phoenix.LiveController do
     end
   end
 
+  def _mount(module, params, session, socket) do
+    action =
+      socket.assigns[:live_action] ||
+        raise(
+          "#{inspect(module)} called without action - mount it via route that specifies action"
+        )
+
+    unless Enum.member?(module.__live_controller__(:actions), action),
+      do:
+        raise(
+          "#{inspect(module)} doesn't implement action mount for #{inspect(action)} - make sure that #{
+            action
+          } function is defined and annotated with `@action_mount true`"
+        )
+
+    socket
+    |> module.apply_session(session)
+    |> unless_redirected(&module.before_action_mount(&1, action, params))
+    |> unless_redirected(&module.action_mount(&1, action, params))
+    |> wrap_socket(&{:ok, &1})
+  end
+
+  def _handle_event(module, event_string, params, socket) do
+    unless Enum.any?(module.__live_controller__(:events), &(to_string(&1) == event_string)),
+      do:
+        raise(
+          "#{inspect(module)} doesn't implement event handler for #{inspect(event_string)} - make sure that #{
+            event_string
+          } function is defined and annotated with `@event_handler true`"
+        )
+
+    event = String.to_atom(event_string)
+
+    socket
+    |> module.before_event_handler(event, params)
+    |> unless_redirected(&module.event_handler(&1, event, params))
+    |> wrap_socket(&{:noreply, &1})
+  end
+
   @doc ~S"""
   Calls given function if socket wasn't redirected, passes the socket through otherwise.
 
   Read more about the role that this function plays in the live controller pipeline in docs for
   `Phoenix.LiveController`.
   """
-  @spec unless_redirected(socket :: Socket.t, func :: function) :: Socket.t
+  @spec unless_redirected(socket :: Socket.t(), func :: function) :: Socket.t()
   def unless_redirected(socket = %{redirected: nil}, func), do: func.(socket)
   def unless_redirected(redirected_socket, _func), do: redirected_socket
+
+  defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
+  defp wrap_socket(misc, _wrapper), do: misc
 end
