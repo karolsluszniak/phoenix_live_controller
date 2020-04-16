@@ -468,17 +468,28 @@ defmodule Phoenix.LiveController do
   def _mount(module, params, session, socket) do
     action =
       socket.assigns[:live_action] ||
-        raise(
-          "#{inspect(module)} called without action - mount it via route that specifies action"
-        )
+        raise """
+        #{inspect(module)} called without action.
+
+        Make sure to mount it via route that specifies action, e.g. for :index action:
+
+            live "/some_url", #{inspect(module)}, :index
+
+        """
 
     unless Enum.member?(module.__live_controller__(:actions), action),
       do:
-        raise(
-          "#{inspect(module)} doesn't implement action mount for #{inspect(action)} - make sure that #{
-            action
-          } function is defined and annotated with `@action_mount true`"
-        )
+        raise("""
+        #{inspect(module)} doesn't implement action mount for #{inspect(action)} action.
+
+        Make sure that #{action} function is defined and annotated as action mount:
+
+            @action_mount true
+            def #{action}(socket, params) do
+              # ...
+            end
+
+        """)
 
     socket
     |> module.apply_session(session)
@@ -490,11 +501,17 @@ defmodule Phoenix.LiveController do
   def _handle_event(module, event_string, params, socket) do
     unless Enum.any?(module.__live_controller__(:events), &(to_string(&1) == event_string)),
       do:
-        raise(
-          "#{inspect(module)} doesn't implement event handler for #{inspect(event_string)} - make sure that #{
-            event_string
-          } function is defined and annotated with `@event_handler true`"
-        )
+        raise("""
+        #{inspect(module)} doesn't implement event handler for #{inspect(event_string)} event.
+
+        Make sure that #{event_string} function is defined and annotated as event handler:
+
+            @event_handler true
+            def #{event_string}(socket, params) do
+              # ...
+            end
+
+        """)
 
     event = String.to_atom(event_string)
 

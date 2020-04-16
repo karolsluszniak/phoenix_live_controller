@@ -16,25 +16,38 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :badactionnn)
 
-    assert_raise(
-      RuntimeError,
-      "SampleLive doesn't implement action mount for :badactionnn - make sure that badactionnn function is defined and annotated with `@action_mount true`",
-      fn ->
-        SampleLive.mount(%{}, %{}, socket)
-      end
-    )
+    expected_error = """
+    SampleLive doesn't implement action mount for :badactionnn action.
+
+    Make sure that badactionnn function is defined and annotated as action mount:
+
+        @action_mount true
+        def badactionnn(socket, params) do
+          # ...
+        end
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.mount(%{}, %{}, socket)
+    end)
   end
 
   test "mounting without action" do
     socket = %Phoenix.LiveView.Socket{}
 
-    assert_raise(
-      RuntimeError,
-      "SampleLive called without action - mount it via route that specifies action",
-      fn ->
-        SampleLive.mount(%{}, %{}, socket)
-      end
-    )
+    expected_error = """
+    SampleLive called without action.
+
+    Make sure to mount it via route that specifies action, e.g. for :index action:
+
+        live "/some_url", SampleLive, :index
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.mount(%{}, %{}, socket)
+    end)
   end
 
   test "handling events" do
@@ -51,13 +64,21 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
 
-    assert_raise(
-      RuntimeError,
-      "SampleLive doesn't implement event handler for \"badeventtt\" - make sure that badeventtt function is defined and annotated with `@event_handler true`",
-      fn ->
-        SampleLive.handle_event("badeventtt", %{}, socket)
-      end
-    )
+    expected_error = """
+    SampleLive doesn't implement event handler for "badeventtt" event.
+
+    Make sure that badeventtt function is defined and annotated as event handler:
+
+        @event_handler true
+        def badeventtt(socket, params) do
+          # ...
+        end
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.handle_event("badeventtt", %{}, socket)
+    end)
   end
 
   test "applying session" do
