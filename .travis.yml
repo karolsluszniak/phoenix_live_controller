@@ -1,0 +1,2 @@
+language: elixir
+script: mix check
