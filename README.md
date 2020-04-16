@@ -18,6 +18,8 @@ def deps do
 end
 ```
 
-## Usage
+## Learning
 
-Please read [Phoenix.LiveController docs on HexDocs](https://hexdocs.pm/phoenix_live_controller).
+- [Introductory article & guide for converting HTML resources to live controllers](http://cloudless.studio/articles/51-controller-style-approach-to-liveview-resources) with [example app](https://github.com/karolsluszniak/phoenix_live_controller_example_app)
+- [Phoenix.LiveController docs for detailed explanation & examples of live controllers](https://hexdocs.pm/phoenix_live_controller)
+- [Phoenix.LiveView docs for explanation of live view itself](https://hexdocs.pm/phoenix_live_view)
