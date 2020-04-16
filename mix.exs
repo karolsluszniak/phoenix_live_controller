@@ -29,6 +29,7 @@ defmodule PhoenixLiveController.MixProject do
 
   defp deps do
     [
+      {:ex_check, ">= 0.0.0", only: :dev, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:phoenix_live_view, ">= 0.0.0"},
       {:poison, ">= 0.0.0", only: :test}
