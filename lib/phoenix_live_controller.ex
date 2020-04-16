@@ -513,6 +513,7 @@ defmodule Phoenix.LiveController do
   Read more about the role that this function plays in the live controller pipeline in docs for
   `Phoenix.LiveController`.
   """
+  @spec unless_redirected(socket :: Socket.t, func :: function) :: Socket.t
   def unless_redirected(socket = %{redirected: nil}, func), do: func.(socket)
   def unless_redirected(redirected_socket, _func), do: redirected_socket
 end
