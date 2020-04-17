@@ -21,7 +21,7 @@ defmodule Phoenix.LiveControllerTest do
 
     Make sure that badactionnn function is defined and annotated as action mount:
 
-        @action_mount true
+        @action_handler true
         def badactionnn(socket, params) do
           # ...
         end
@@ -48,6 +48,25 @@ defmodule Phoenix.LiveControllerTest do
     assert_raise(RuntimeError, expected_error, fn ->
       SampleLive.mount(%{}, %{}, socket)
     end)
+  end
+
+  test "patching params" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
+    refute Phoenix.LiveController.mounted?(socket)
+
+    # first call to handle_params should mark socket as mounted without invoking action handler
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "x"}, "", socket)
+    assert Phoenix.LiveController.mounted?(socket)
+    assert socket.assigns.items == ["first", :second]
+
+    # further calls should work as expected
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "x"}, "", socket)
+    assert Phoenix.LiveController.mounted?(socket)
+    assert socket.assigns.items == ["x", :second]
   end
 
   test "handling events" do
@@ -106,7 +125,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
-    assert Map.has_key?(socket.assigns, :before_action_mount_called)
+    assert Map.has_key?(socket.assigns, :before_action_handler_called)
   end
 
   test "pipelines: before action mount redirected" do
@@ -117,7 +136,7 @@ defmodule Phoenix.LiveControllerTest do
     assert {:ok, socket} = SampleLive.mount(%{"redirect" => "1"}, %{}, socket)
     assert socket.redirected
     refute Map.has_key?(socket.assigns, :items)
-    refute Map.has_key?(socket.assigns, :before_action_mount_called)
+    refute Map.has_key?(socket.assigns, :before_action_handler_called)
   end
 
   test "pipelines: overriding action mount" do
@@ -126,7 +145,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
-    assert socket.assigns.action_mount_override
+    assert socket.assigns.action_handler_override
   end
 
   test "pipelines: before event handler" do

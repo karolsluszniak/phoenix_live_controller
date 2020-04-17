@@ -9,17 +9,17 @@ defmodule SampleLive do
   end
 
   @impl true
-  def before_action_mount(socket, _name, params) do
+  def before_action_handler(socket, _name, params) do
     if params["redirect"],
       do: push_redirect(socket, to: "/"),
-      else: assign(socket, before_action_mount_called: true)
+      else: assign(socket, before_action_handler_called: true)
   end
 
   @impl true
-  def action_mount(socket, name, params) do
+  def action_handler(socket, name, params) do
     socket
     |> super(name, params)
-    |> assign(:action_mount_override, true)
+    |> assign(:action_handler_override, true)
   end
 
   @impl true
@@ -36,7 +36,7 @@ defmodule SampleLive do
     |> assign(:event_handler_override, true)
   end
 
-  @action_mount true
+  @action_handler true
   def index(socket, params) do
     assign(socket, items: [params["first_item"], :second])
   end
