@@ -179,6 +179,30 @@ defmodule Phoenix.LiveControllerTest do
     assert socket.assigns.event_handler_override
   end
 
+  test "pipelines: before message handler" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
+    assert socket.assigns[:called]
+    assert Map.has_key?(socket.assigns, :before_message_handler_called)
+  end
+
+  test "pipelines: before message handler redirected" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info({:x, :redirect}, socket)
+    assert socket.redirected
+    refute socket.assigns[:called]
+    refute Map.has_key?(socket.assigns, :before_message_handler_called)
+  end
+
+  test "pipelines: overriding message handler" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
+    assert socket.assigns.message_handler_override
+  end
+
   test "pipelines: unless_redirected/2" do
     socket =
       %Phoenix.LiveView.Socket{}
