@@ -17,9 +17,9 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :badactionnn)
 
     expected_error = """
-    SampleLive doesn't implement action mount for :badactionnn action.
+    SampleLive doesn't implement action handler for :badactionnn action.
 
-    Make sure that badactionnn function is defined and annotated as action mount:
+    Make sure that badactionnn function is defined and annotated as action handler:
 
         @action_handler true
         def badactionnn(socket, params) do
@@ -194,6 +194,53 @@ defmodule Phoenix.LiveControllerTest do
 
     assert Phoenix.LiveController.unless_redirected(socket, func).assigns.called
     refute Phoenix.LiveController.unless_redirected(redirected_socket, func).assigns.called
+  end
+
+  test "handling messages" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
+    assert socket.assigns.called == true
+  end
+
+  test "handling undefined messages" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    expected_error = """
+    SampleLive doesn't implement message handler for :badmsggg message.
+
+    Make sure that badmsggg function is defined and annotated as message handler:
+
+        @message_handler true
+        def badmsggg(socket, message) do
+          # ...
+        end
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.handle_info(:badmsggg, socket)
+    end)
+  end
+
+  test "handling unsupported messages" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    expected_error = """
+    Message 1 cannot be handled by message handler and SampleLive
+    doesn't implement handle_info/3 that would handle it instead.
+
+    Make sure that appropriate handle_info/3 function matching this message is defined:
+
+        def handle_info(message, socket) do
+          # ...
+        end
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.handle_info(1, socket)
+    end)
   end
 
   test "rendering actions" do

@@ -45,4 +45,9 @@ defmodule SampleLive do
   def create(socket, params) do
     assign(socket, items: socket.assigns.items ++ [params["new_item"]])
   end
+
+  @message_handler true
+  def x(socket, :x) do
+    assign(socket, called: true)
+  end
 end

@@ -2,6 +2,11 @@
 
 ## 0.3.0-dev
 
+### Enhancements
+
+- Introduce message handlers for handling process messages in a fashion consistent with action and
+  event handlers
+
 ### Backwards incompatible changes
 
 - Replace action mounts with action handlers that also cover patching params: this includes the
