@@ -665,11 +665,12 @@ defmodule Phoenix.LiveController do
   end
 
   def _handle_message(module, message, socket) do
-    message_atom = cond do
-      is_atom(message) -> message
-      is_tuple(message) and is_atom(elem(message, 0)) -> elem(message, 0)
-      true -> nil
-    end
+    message_atom =
+      cond do
+        is_atom(message) -> message
+        is_tuple(message) and is_atom(elem(message, 0)) -> elem(message, 0)
+        true -> nil
+      end
 
     unless message_atom,
       do:
