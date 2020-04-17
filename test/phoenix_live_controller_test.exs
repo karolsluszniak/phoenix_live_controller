@@ -17,9 +17,9 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :badactionnn)
 
     expected_error = """
-    SampleLive doesn't implement action mount for :badactionnn action.
+    SampleLive doesn't implement action handler for :badactionnn action.
 
-    Make sure that badactionnn function is defined and annotated as action mount:
+    Make sure that badactionnn function is defined and annotated as action handler:
 
         @action_handler true
         def badactionnn(socket, params) do
