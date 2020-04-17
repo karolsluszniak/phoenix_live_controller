@@ -320,8 +320,9 @@ defmodule Phoenix.LiveController do
   Phoenix controllers are [backed by the power of Plug
   pipelines](https://hexdocs.pm/phoenix/Phoenix.Controller.html#module-plug-pipeline) in order to
   organize common code called before actions and to allow halting early. LiveController provides its
-  own simplified solution for these problems via optional `c:before_action_handler/3` and
-  `c:before_event_handler/3` callbacks supported by the `unless_redirected/2` helper function.
+  own simplified solution for these problems via optional `c:before_action_handler/3`,
+  `c:before_event_handler/3` and `c:before_message_handler/3` callbacks supported by the
+  `unless_redirected/2` helper function.
 
   `c:before_action_handler/3` acts on a socket after session is applied but before an actual action
   handler is called.
