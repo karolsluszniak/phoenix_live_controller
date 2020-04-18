@@ -16,13 +16,6 @@ defmodule SampleLive do
   end
 
   @impl true
-  def action_handler(socket, name, params) do
-    socket
-    |> super(name, params)
-    |> assign(:action_handler_override, true)
-  end
-
-  @impl true
   def before_event_handler(socket, _name, params) do
     if params["redirect"],
       do: push_redirect(socket, to: "/"),
@@ -30,10 +23,31 @@ defmodule SampleLive do
   end
 
   @impl true
+  def before_message_handler(socket, _name, message) do
+    if message == {:x, :redirect},
+      do: push_redirect(socket, to: "/"),
+      else: assign(socket, before_message_handler_called: true)
+  end
+
+  @impl true
+  def action_handler(socket, name, params) do
+    socket
+    |> super(name, params)
+    |> assign(:action_handler_override, true)
+  end
+
+  @impl true
   def event_handler(socket, name, params) do
     socket
     |> super(name, params)
     |> assign(:event_handler_override, true)
+  end
+
+  @impl true
+  def message_handler(socket, name, message) do
+    socket
+    |> super(name, message)
+    |> assign(:message_handler_override, true)
   end
 
   @action_handler true
@@ -44,5 +58,10 @@ defmodule SampleLive do
   @event_handler true
   def create(socket, params) do
     assign(socket, items: socket.assigns.items ++ [params["new_item"]])
+  end
+
+  @message_handler true
+  def x(socket, _message) do
+    assign(socket, called: true)
   end
 end

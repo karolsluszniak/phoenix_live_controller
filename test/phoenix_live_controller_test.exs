@@ -179,6 +179,30 @@ defmodule Phoenix.LiveControllerTest do
     assert socket.assigns.event_handler_override
   end
 
+  test "pipelines: before message handler" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
+    assert socket.assigns[:called]
+    assert Map.has_key?(socket.assigns, :before_message_handler_called)
+  end
+
+  test "pipelines: before message handler redirected" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info({:x, :redirect}, socket)
+    assert socket.redirected
+    refute socket.assigns[:called]
+    refute Map.has_key?(socket.assigns, :before_message_handler_called)
+  end
+
+  test "pipelines: overriding message handler" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
+    assert socket.assigns.message_handler_override
+  end
+
   test "pipelines: unless_redirected/2" do
     socket =
       %Phoenix.LiveView.Socket{}
@@ -194,6 +218,53 @@ defmodule Phoenix.LiveControllerTest do
 
     assert Phoenix.LiveController.unless_redirected(socket, func).assigns.called
     refute Phoenix.LiveController.unless_redirected(redirected_socket, func).assigns.called
+  end
+
+  test "handling messages" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
+    assert socket.assigns.called == true
+  end
+
+  test "handling undefined messages" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    expected_error = """
+    SampleLive doesn't implement message handler for :badmsggg message.
+
+    Make sure that badmsggg function is defined and annotated as message handler:
+
+        @message_handler true
+        def badmsggg(socket, message) do
+          # ...
+        end
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.handle_info(:badmsggg, socket)
+    end)
+  end
+
+  test "handling unsupported messages" do
+    socket = %Phoenix.LiveView.Socket{}
+
+    expected_error = """
+    Message 1 cannot be handled by message handler and SampleLive
+    doesn't implement handle_info/3 that would handle it instead.
+
+    Make sure that appropriate handle_info/3 function matching this message is defined:
+
+        def handle_info(message, socket) do
+          # ...
+        end
+
+    """
+
+    assert_raise(RuntimeError, expected_error, fn ->
+      SampleLive.handle_info(1, socket)
+    end)
   end
 
   test "rendering actions" do
