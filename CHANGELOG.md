@@ -2,16 +2,23 @@
 
 ## 0.3.0-dev
 
+This release pushes LiveController from being a simple action & event router into a more complete
+solution for representing most of usual live view logic in a consistent way, including handling
+parameter patching and process messages.
+
 ### Enhancements
 
-- Introduce message handlers for handling process messages in a fashion consistent with action and
+- Introduce *message handlers* for handling process messages in a fashion consistent with action and
   event handlers
+- Refactor *action mounts* into *action handlers* responsible both for mounting actions and handling
+  parameter patching
 
 ### Backwards incompatible changes
 
-- Replace action mounts with action handlers that also cover patching params: this includes the
-  rename of `c:action_mount/3` callback to `c:action_handler/3`, `c:before_action_mount/3` callback
-  to `c:before_action_handler/3` and `@action_mount true` annotation to `@action_handler true`
+- Replace "action mounts" naming with "action handlers" including rename of `c:action_mount/3`
+  callback to `c:action_handler/3`, `c:before_action_mount/3` callback to
+  `c:before_action_handler/3` and `@action_mount true` annotation to `@action_handler true`; action
+  handlers still work exactly the same as before for controllers that don't do parameter patching
 
 ## 0.2.0 (2020-04-16)
 

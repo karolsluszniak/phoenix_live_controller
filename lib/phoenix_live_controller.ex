@@ -158,43 +158,6 @@ defmodule Phoenix.LiveController do
   Note that action handlers don't have to wrap the resulting socket in the `{:ok, socket}` tuple,
   which also brings them closer to Phoenix controller actions.
 
-  ## Patching params
-
-  For live views that [implement param
-  patching](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#module-live-navigation),
-  action handlers also replace `c:Phoenix.LiveView.handle_params/3` callbacks. The same action
-  handler is first called when mounting and then it's called again whenever params are patched.
-
-      defmodule MyAppWeb.ArticleLive do
-        use Phoenix.LiveController
-
-        @action_handler true
-        def index(socket, params) do
-          articles = Blog.list_articles(page: params["page"])
-          assign(socket, articles: articles)
-        end
-      end
-
-  Using the `mounted?/1` helper, action handlers may conditionally invoke parts of their logic
-  depending on whether socket was already mounted, e.g. to initiate timers or run expensive loads
-  that don't depend on params only upon the first mount.
-
-      defmodule MyAppWeb.ArticleLive do
-        use Phoenix.LiveController
-
-        @action_handler true
-        def index(socket, params) do
-          unless mounted?(socket),
-            do: :timer.send_interval(1_000, self(), :tick)
-
-          articles = Blog.list_articles(page: params["page"])
-          assign(socket, articles: articles)
-        end
-      end
-
-  Note that an action handler will only be called once when mounting, even though native LiveView
-  calls both `mount/3` and `handle_params/3` at that moment.
-
   ## Handling events
 
   *Event handlers* replace `c:Phoenix.LiveView.handle_event/3` callbacks in order to make the event
@@ -238,9 +201,7 @@ defmodule Phoenix.LiveController do
 
         @action_handler true
         def show(socket, %{"id" => id}) do
-          unless mounted?(socket),
-            do: :timer.send_interval(5_000, self(), :refresh_article)
-
+          :timer.send_interval(5_000, self(), :refresh_article)
           assign(socket, article: Blog.get_article!(id))
         end
 
@@ -315,6 +276,55 @@ defmodule Phoenix.LiveController do
   Note that, in a fashion similar to controller plugs, no further action handling logic will be
   called if the returned socket was redirected - more on that below.
 
+  ## Updating params without redirect
+
+  For live views that [implement parameter
+  patching](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#module-live-navigation) (e.g.
+  to avoid re-mounting the live view & resetting its DOM or state), action handlers also replace
+  `c:Phoenix.LiveView.handle_params/3` callbacks. The same action handler is called once when
+  mounting and then it's called again whenever params are patched.
+
+  This means that parameter patching is supported out-of-the-box for action handlers that work just
+  as fine for initial mount as for subsequent parameter changes.
+
+      # lib/my_app_web/templates/article/index.html.leex
+      <%= live_patch "Page 2", to: Routes.article_path(@socket, :index, page: "2") %>
+
+      # lib/my_app_web/live/article_live.ex
+      defmodule MyAppWeb.ArticleLive do
+        use Phoenix.LiveController
+
+        @action_handler true
+        def index(socket, params) do
+          articles = Blog.list_articles(page: params["page"])
+          assign(socket, articles: articles)
+        end
+      end
+
+  Using the `mounted?/1` helper, action handlers may conditionally invoke parts of their logic
+  depending on whether socket was already mounted, e.g. to initiate timers or run expensive loads
+  that don't depend on params only upon the first mount.
+
+      defmodule MyAppWeb.ArticleLive do
+        use Phoenix.LiveController
+
+        @action_handler true
+        def index(socket, params) do
+          unless mounted?(socket),
+            do: :timer.send_interval(5_000, self(), :check_for_new_articles)
+
+          socket = unless mounted?(socket),
+            do: assign(socket, tags: Blog.list_tags()),
+            else: socket
+
+          articles = Blog.list_articles(page: params["page"])
+          assign(socket, articles: articles)
+        end
+      end
+
+  Note that an action handler will only be called once when mounting, even though native LiveView
+  calls both `mount/3` and `handle_params/3` at that moment.
+
   ## Pipelines
 
   Phoenix controllers are [backed by the power of Plug
@@ -376,7 +386,7 @@ defmodule Phoenix.LiveController do
   of
   [`action/2`](https://hexdocs.pm/phoenix/Phoenix.Controller.html#module-overriding-action-2-for-custom-arguments)
   plug in Phoenix controllers - complete the pipeline by calling functions named after specific
-  actions or events.
+  actions, events or messages.
 
   ## Specifying LiveView options
 
