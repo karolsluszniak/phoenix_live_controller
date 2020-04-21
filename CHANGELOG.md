@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0-dev
+## 0.3.0
 
 This release pushes LiveController from being a simple action & event router into a more complete
 solution for representing most of usual live view logic in a consistent way, including handling
@@ -12,6 +12,7 @@ parameter patching and process messages.
   event handlers
 - Refactor *action mounts* into *action handlers* responsible both for mounting actions and handling
   parameter patching
+- Rewrite some of the docs to facilitate changes in Phoenix 1.5 and LiveView 0.12
 
 ### Backwards incompatible changes
 
