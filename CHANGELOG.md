@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0
+## 0.3.0 (2020-04-21)
 
 This release pushes LiveController from being a simple action & event router into a more complete
 solution for representing most of usual live view logic in a consistent way, including handling
