@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0-dev
+
+### Enhancements
+
+- Introduce `Phoenix.LiveController.ViewRenderer` that renders live view or component with a view &
+  template named after the live module & live action, allowing to consistently hold all templates in
+  `lib/my_app_web/templates` directory and to consistently back them with view modules in order to
+  accommodate the view logic - even when using live controllers together with regular live views and
+  live components
+
+### Backwards incompatible changes
+
+- Call to `use Phoenix.LiveController` no longer provides the rendering behaviour that was moved to
+  ViewRenderer so a separate `use Phoenix.LiveController.ViewRenderer` call is needed
+
 ## 0.3.0 (2020-04-21)
 
 This release pushes LiveController from being a simple action & event router into a more complete

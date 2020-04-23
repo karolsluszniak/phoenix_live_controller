@@ -275,4 +275,13 @@ defmodule Phoenix.LiveControllerTest do
     assert {:rendered, "index.html", %{live_action: :index, other: :x}} =
              SampleLive.render(socket.assigns)
   end
+
+  test "rendering live submodules" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(other: :x)
+
+    assert {:rendered, "some.html", %{other: :x}} =
+             SampleLive.SomeComponent.render(socket.assigns)
+  end
 end

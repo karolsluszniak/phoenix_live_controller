@@ -1,5 +1,6 @@
 defmodule SampleLive do
   use Phoenix.LiveController
+  use Phoenix.LiveController.ViewRenderer
 
   @impl true
   def apply_session(socket, session) do

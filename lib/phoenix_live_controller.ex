@@ -398,16 +398,7 @@ defmodule Phoenix.LiveController do
 
   ## Rendering actions
 
-  Implementation of the `c:Phoenix.LiveView.render/1` callback may be omitted in which case the
-  default implementation will be injected. It'll ask the view module named after specific live
-  module to render HTML template named after the action - the same way that Phoenix controllers do
-  when the `Phoenix.Controller.render/2` is called without a template name.
-
-  For example, `MyAppWeb.ArticleLive` mounted with `:index` action will render with following call:
-
-      MyAppWeb.ArticleView.render("index.html", assigns)
-
-  Custom `c:Phoenix.LiveView.render/1` implementation may still be provided if necessary.
+  See `Phoenix.LiveController.ViewRenderer`.
 
   """
 
@@ -530,13 +521,6 @@ defmodule Phoenix.LiveController do
                       message_handler: 3
 
   defmacro __using__(opts) do
-    view_module =
-      __CALLER__.module
-      |> to_string()
-      |> String.replace(~r/(Live|LiveController)$/, "")
-      |> Kernel.<>("View")
-      |> String.to_atom()
-
     quote do
       use Phoenix.LiveView, unquote(opts)
 
@@ -561,9 +545,6 @@ defmodule Phoenix.LiveController do
 
       def handle_event(event_string, params, socket),
         do: unquote(__MODULE__)._handle_event(__MODULE__, event_string, params, socket)
-
-      def render(assigns = %{live_action: action}),
-        do: unquote(view_module).render("#{action}.html", assigns)
 
       # Default implementations of Phoenix.LiveController callbacks
 
@@ -594,8 +575,7 @@ defmodule Phoenix.LiveController do
                      message_handler: 3,
                      before_action_handler: 3,
                      before_event_handler: 3,
-                     before_message_handler: 3,
-                     render: 1
+                     before_message_handler: 3
     end
   end
 
