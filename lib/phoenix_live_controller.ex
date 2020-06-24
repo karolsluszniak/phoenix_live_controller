@@ -511,7 +511,7 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()}
+            ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
 
   @doc ~S"""
   Invokes event handler for specific event.
@@ -595,9 +595,18 @@ defmodule Phoenix.LiveController do
 
     @callback call(
                 socket :: Socket.t(),
+                payload :: Action.t() | Event.t() | Message.t()
+              ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+    @callback call(
+                socket :: Socket.t(),
                 payload :: Action.t() | Event.t() | Message.t(),
                 opts :: any()
               ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+
+
+    @optional_callbacks call: 2,
+                        call: 3
+
   end
 
   defmacro __using__(opts) do
@@ -937,5 +946,5 @@ defmodule Phoenix.LiveController do
   end
 
   defp extract_when({:when, _, [left, when_conditions]}), do: {left, when_conditions}
-  defp extract_when(other), do: other
+  defp extract_when(other), do: {other, true}
 end
