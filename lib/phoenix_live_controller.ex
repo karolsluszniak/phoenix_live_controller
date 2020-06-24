@@ -739,11 +739,9 @@ defmodule Phoenix.LiveController do
 
     Enum.reduce(plugs, socket, fn {target, opts}, socket ->
       chain(socket, fn socket ->
-        if opts do
-          module.__live_controller_plug__(target, socket, payload, opts)
-        else
-          module.__live_controller_plug__(target, socket, payload)
-        end
+        if opts,
+          do: module.__live_controller_plug__(target, socket, payload, opts),
+          else: module.__live_controller_plug__(target, socket, payload)
       end)
     end)
   end
@@ -881,67 +879,26 @@ defmodule Phoenix.LiveController do
 
     plug = {target, opts}
 
-    cond do
-      opts && target_mod ->
-        quote do
-          @plugs unquote(Macro.escape(plug))
+    args = if opts,
+      do: quote(do: [socket, payload, opts]),
+      else: quote(do: [socket, payload])
 
-          def __live_controller_plug__(unquote(target), socket, payload, opts) do
-            var!(type) = payload.type
-            var!(name) = payload.name
-            if var!(type) && var!(name) && unquote(conditions) do
-              unquote(target_mod).unquote(target_fun)(socket, payload, opts)
-            else
-              socket
-            end
-          end
+    call_target = if target_mod,
+      do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+      else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+
+    quote do
+      @plugs unquote(Macro.escape(plug))
+
+      def __live_controller_plug__(unquote(target), unquote_splicing(args)) do
+        var!(type) = payload.type
+        var!(name) = payload.name
+        if var!(type) && var!(name) && unquote(conditions) do
+          unquote(call_target)
+        else
+          socket
         end
-
-      opts ->
-        quote do
-          @plugs unquote(Macro.escape(plug))
-
-          def __live_controller_plug__(unquote(target), socket, payload, opts) do
-            var!(type) = payload.type
-            var!(name) = payload.name
-            if var!(type) && var!(name) && unquote(conditions) do
-              unquote(target_fun)(socket, payload, opts)
-            else
-              socket
-            end
-          end
-        end
-
-      target_mod ->
-        quote do
-          @plugs unquote(Macro.escape(plug))
-
-          def __live_controller_plug__(unquote(target), socket, payload) do
-            var!(type) = payload.type
-            var!(name) = payload.name
-            if var!(type) && var!(name) && unquote(conditions) do
-              unquote(target_mod).unquote(target_fun)(socket, payload)
-            else
-              socket
-            end
-          end
-        end
-
-      true ->
-        quote do
-          @plugs unquote(Macro.escape(plug))
-
-          def __live_controller_plug__(unquote(target), socket, payload) do
-            var!(type) = payload.type
-            var!(name) = payload.name
-            if var!(type) && var!(name) && unquote(conditions) do
-              unquote(target_fun)(socket, payload)
-            else
-              socket
-            end
-          end
-        end
-
+      end
     end
   end
 
