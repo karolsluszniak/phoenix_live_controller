@@ -552,12 +552,11 @@ defmodule Phoenix.LiveController do
     """
 
     @type t() :: %__MODULE__{
-            type: :action,
             name: atom(),
             params: map()
           }
 
-    defstruct [type: :action, name: nil, params: nil]
+    defstruct [name: nil, params: nil]
   end
 
   defmodule Event do
@@ -566,12 +565,11 @@ defmodule Phoenix.LiveController do
     """
 
     @type t() :: %__MODULE__{
-            type: :event,
             name: atom(),
             params: map()
           }
 
-    defstruct [type: :event, name: nil, params: nil]
+    defstruct [name: nil, params: nil]
   end
 
   defmodule Message do
@@ -580,12 +578,11 @@ defmodule Phoenix.LiveController do
     """
 
     @type t() :: %__MODULE__{
-            type: :message,
             name: atom(),
             payload: any()
           }
 
-    defstruct [type: :message, name: nil, payload: nil]
+    defstruct [name: nil, payload: nil]
   end
 
   defmodule Plug do
@@ -668,23 +665,78 @@ defmodule Phoenix.LiveController do
     end
   end
 
-  defmacro __before_compile__(_env) do
-    quote do
+  defmacro __before_compile__(env) do
+    build_handler_plugs(env.module) ++ [quote do
       Module.delete_attribute(__MODULE__, :action_handler)
       Module.delete_attribute(__MODULE__, :event_handler)
       Module.delete_attribute(__MODULE__, :message_handler)
-
-      @plugs_in_order Enum.reverse(@plugs)
 
       @doc false
       def __live_controller__(:actions), do: @actions
       def __live_controller__(:events), do: @events
       def __live_controller__(:messages), do: @messages
-      def __live_controller__(:plugs), do: @plugs_in_order
 
       def handle_info(message, socket),
         do: unquote(__MODULE__)._handle_message(__MODULE__, message, socket)
-    end
+    end]
+  end
+
+  defp build_handler_plugs(module) do
+    handlers = (Module.get_attribute(module, :actions) |> Enum.map(&{&1, :action})) ++
+      (Module.get_attribute(module, :events) |> Enum.map(&{&1, :event})) ++
+      (Module.get_attribute(module, :messages) |> Enum.map(&{&1, :message}))
+
+    plugs = Module.get_attribute(module, :plugs)
+
+    Enum.map(handlers, fn {name, type} ->
+      matching_plugs = Enum.filter(plugs, fn {conditions, _target_mod, _target_fun, _opts} ->
+        conditions_check = quote do
+          var!(name) = unquote(name)
+          var!(type) = unquote(type)
+          unquote(conditions)
+        end
+        {passed, _} = Code.eval_quoted(conditions_check, [name_in: name, type_in: type], __ENV__)
+        passed
+      end)
+
+      if matching_plugs == [] do
+        quote do
+          def __live_controller_plug__(unquote(name), socket, payload) do
+            socket
+          end
+        end
+      else
+        quote do
+          def __live_controller_plug__(unquote(name), socket, payload) do
+            unquote(build_handler_plug_calls(matching_plugs))
+          end
+        end
+      end
+    end)
+  end
+
+  defp build_handler_plug_calls(matching_plugs) do
+    matching_plugs
+    |> Enum.map(fn {_conditions, target_mod, target_fun, opts} ->
+      args = if opts,
+        do: quote(do: [socket, payload, unquote(opts)]),
+        else: quote(do: [socket, payload])
+
+      if target_mod,
+        do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+        else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+    end)
+    |> Enum.map(fn call ->
+      quote(do: chain(socket, fn socket -> unquote(call) end))
+    end)
+    |> Enum.reverse()
+    |> Enum.reduce(fn
+      {{:., [], target}, [], [_socket | rem_args]}, last_socket ->
+        {{:., [], target}, [], [last_socket | rem_args]}
+
+      {name, [], [_socket | rem_args]}, last_socket ->
+        {name, [], [last_socket | rem_args]}
+    end)
   end
 
   def __on_definition__(env, _kind, name, _args, _guards, _body) do
@@ -734,16 +786,8 @@ defmodule Phoenix.LiveController do
     |> wrap_socket(&{:ok, &1})
   end
 
-  defp run_plugs(socket, module, payload) do
-    plugs = module.__live_controller__(:plugs)
-
-    Enum.reduce(plugs, socket, fn {target, opts}, socket ->
-      chain(socket, fn socket ->
-        if opts,
-          do: module.__live_controller_plug__(target, socket, payload, opts),
-          else: module.__live_controller_plug__(target, socket, payload)
-      end)
-    end)
+  defp run_plugs(socket, module, payload = %{name: name}) do
+    module.__live_controller_plug__(name, socket, payload)
   end
 
   def _handle_params(module, params, _url, socket) do
@@ -864,41 +908,16 @@ defmodule Phoenix.LiveController do
       {target, nil, conditions}
     end
 
-    {target, target_mod, target_fun} = case target do
-      atom when is_atom(atom) ->
-        {target, nil, atom}
-
-      ast = {:__aliases__, _meta, _parts} ->
-        mod = Macro.expand(ast, __CALLER__)
-        {{mod, :call}, mod, :call}
-
-      {ast = {:__aliases__, _meta, _parts}, fun} ->
-        mod = Macro.expand(ast, __CALLER__)
-        {{mod, fun}, mod, fun}
+    {target_mod, target_fun} = case target do
+      atom when is_atom(atom) -> {nil, atom}
+      ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call}
+      {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
     end
 
-    plug = {target, opts}
-
-    args = if opts,
-      do: quote(do: [socket, payload, opts]),
-      else: quote(do: [socket, payload])
-
-    call_target = if target_mod,
-      do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
-      else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+    plug = {conditions, target_mod, target_fun, opts}
 
     quote do
       @plugs unquote(Macro.escape(plug))
-
-      def __live_controller_plug__(unquote(target), unquote_splicing(args)) do
-        var!(type) = payload.type
-        var!(name) = payload.name
-        if var!(type) && var!(name) && unquote(conditions) do
-          unquote(call_target)
-        else
-          socket
-        end
-      end
     end
   end
 
