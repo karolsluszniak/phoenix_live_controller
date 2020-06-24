@@ -202,7 +202,7 @@ defmodule Phoenix.LiveControllerTest do
     assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
     assert socket.assigns[:called]
     assert Map.has_key?(socket.assigns, :before_message_handler_called)
-    assert %Phoenix.LiveController.Message{name: :x, payload: :x} = socket.assigns.global_plug_called
+    assert %Phoenix.LiveController.Message{name: :x, params: :x} = socket.assigns.global_plug_called
     refute Map.has_key?(socket.assigns, :other_global_plug_called)
   end
 

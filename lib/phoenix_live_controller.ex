@@ -579,10 +579,10 @@ defmodule Phoenix.LiveController do
 
     @type t() :: %__MODULE__{
             name: atom(),
-            payload: any()
+            params: any()
           }
 
-    defstruct [name: nil, payload: nil]
+    defstruct [name: nil, params: nil]
   end
 
   defmodule Plug do
@@ -708,19 +708,31 @@ defmodule Phoenix.LiveController do
       else
         quote do
           def __live_controller_plug__(unquote(name), socket, payload) do
-            unquote(build_handler_plug_calls(matching_plugs))
+            unquote(build_handler_plug_calls(type, matching_plugs))
           end
         end
       end
     end)
   end
 
-  defp build_handler_plug_calls(matching_plugs) do
+  defp build_handler_plug_calls(type, matching_plugs) do
     matching_plugs
     |> Enum.map(fn {_conditions, target_mod, target_fun, opts} ->
+      opts_expr = quote do
+        var!(payload) = payload
+        var!(params) = payload.params
+        var!(name) = payload.name
+        var!(type) = unquote(type)
+        var!(payload)
+        var!(params)
+        var!(name)
+        var!(type)
+        unquote(opts)
+      end
+
       args = if opts,
-        do: quote(do: [socket, payload, unquote(opts)]),
-        else: quote(do: [socket, payload])
+        do: quote(do: [socket, unquote(opts_expr)]),
+        else: quote(do: [socket])
 
       if target_mod,
         do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
@@ -865,7 +877,7 @@ defmodule Phoenix.LiveController do
         """)
 
     socket
-    |> run_plugs(module, %Message{name: message_atom, payload: message})
+    |> run_plugs(module, %Message{name: message_atom, params: message})
     |> chain(&module.message_handler(&1, message_atom, message))
     |> wrap_socket(&{:noreply, &1})
   end

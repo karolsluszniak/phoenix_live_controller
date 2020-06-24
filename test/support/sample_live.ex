@@ -9,7 +9,7 @@ defmodule SampleLive do
       assign(socket, :global_plug_called, payload)
     end
 
-    def other(socket, _payload, arg) do
+    def other(socket, {_payload, arg}) do
       assign(socket, :other_global_plug_called, arg)
     end
   end
@@ -21,13 +21,13 @@ defmodule SampleLive do
       else: assign(socket, user: session["user"])
   end
 
-  plug BeforeGlobal
-  plug {BeforeGlobal, :other}, :arg when type != :message and name != :index_with_opts
+  plug BeforeGlobal, payload
+  plug {BeforeGlobal, :other}, {payload, :arg} when type != :message and name != :index_with_opts
 
-  plug :before_action_handler when type == :action
-  plug :before_action_handler, :before_action_handler_called_two when type == :action
+  plug :before_action_handler, %{p: payload, key: :before_action_handler_called} when type == :action
+  plug :before_action_handler, %{p: payload, key: :before_action_handler_called_two} when type == :action
 
-  defp before_action_handler(socket, %{params: params}, key \\ :before_action_handler_called) do
+  defp before_action_handler(socket, %{p: %{params: params}, key: key}) do
     history = Map.get(socket.assigns, :plug_history, [])
 
     if params["redirect"],
@@ -35,7 +35,7 @@ defmodule SampleLive do
       else: assign(socket, key, true) |> assign(:plug_history, history ++ [key])
   end
 
-  plug :before_event_handler when type == :event
+  plug :before_event_handler, payload when type == :event
 
   def before_event_handler(socket, %{params: params}) do
     if params["redirect"],
@@ -43,9 +43,9 @@ defmodule SampleLive do
       else: assign(socket, before_event_handler_called: true)
   end
 
-  plug :before_message_handler when type == :message
+  plug :before_message_handler, params when type == :message
 
-  def before_message_handler(socket, %{payload: message}) do
+  def before_message_handler(socket, message) do
     if message == {:x, :redirect},
       do: push_redirect(socket, to: "/"),
       else: assign(socket, before_message_handler_called: true)
