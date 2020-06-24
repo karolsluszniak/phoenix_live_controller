@@ -484,45 +484,6 @@ defmodule Phoenix.LiveController do
             ) :: Socket.t()
 
   @doc ~S"""
-  Acts on a socket after session is applied but before an actual action handler is called.
-
-  Read more about the role that this callback plays in the live controller pipeline and the
-  consequences of returning redirected socket from this callback in docs for
-  `Phoenix.LiveController`.
-  """
-  @callback before_action_handler(
-              socket :: Socket.t(),
-              name :: atom,
-              params :: Socket.unsigned_params()
-            ) :: Socket.t()
-
-  @doc ~S"""
-  Acts on a socket before an actual event handler is called.
-
-  Read more about the role that this callback plays in the live controller pipeline and the
-  consequences of returning redirected socket from this callback in docs for
-  `Phoenix.LiveController`.
-  """
-  @callback before_event_handler(
-              socket :: Socket.t(),
-              name :: atom,
-              params :: Socket.unsigned_params()
-            ) :: Socket.t()
-
-  @doc ~S"""
-  Acts on a socket before an actual message handler is called.
-
-  Read more about the role that this callback plays in the live controller pipeline and the
-  consequences of returning redirected socket from this callback in docs for
-  `Phoenix.LiveController`.
-  """
-  @callback before_message_handler(
-              socket :: Socket.t(),
-              name :: atom,
-              message :: any
-            ) :: Socket.t()
-
-  @doc ~S"""
   Invokes action handler for specific action.
 
   It can be overridden, e.g. in order to modify the list of arguments passed to action handlers.
@@ -581,9 +542,6 @@ defmodule Phoenix.LiveController do
             ) :: Socket.t() | {:noreply, Socket.t()}
 
   @optional_callbacks apply_session: 2,
-                      before_action_handler: 3,
-                      before_event_handler: 3,
-                      before_message_handler: 3,
                       action_handler: 3,
                       event_handler: 3,
                       message_handler: 3
@@ -684,15 +642,6 @@ defmodule Phoenix.LiveController do
       def apply_session(socket, _session),
         do: socket
 
-      def before_action_handler(socket, _name, _params),
-        do: socket
-
-      def before_event_handler(socket, _name, _params),
-        do: socket
-
-      def before_message_handler(socket, _name, _message),
-        do: socket
-
       def action_handler(socket, name, params),
         do: apply(__MODULE__, name, [socket, params])
 
@@ -706,9 +655,6 @@ defmodule Phoenix.LiveController do
                      action_handler: 3,
                      event_handler: 3,
                      message_handler: 3,
-                     before_action_handler: 3,
-                     before_event_handler: 3,
-                     before_message_handler: 3,
                      render: 1
     end
   end
@@ -775,7 +721,6 @@ defmodule Phoenix.LiveController do
     |> Map.put_new(:mounted?, false)
     |> module.apply_session(session)
     |> run_plugs(module, %Action{name: action, params: params})
-    |> chain(&module.before_action_handler(&1, action, params))
     |> chain(&module.action_handler(&1, action, params))
     |> wrap_socket(&{:ok, &1})
   end
@@ -804,7 +749,6 @@ defmodule Phoenix.LiveController do
     else
       socket
       |> run_plugs(module, %Action{name: action, params: params})
-      |> chain(&module.before_action_handler(&1, action, params))
       |> chain(&module.action_handler(&1, action, params))
       |> wrap_socket(&{:noreply, &1})
     end
@@ -829,7 +773,6 @@ defmodule Phoenix.LiveController do
 
     socket
     |> run_plugs(module, %Event{name: event, params: params})
-    |> module.before_event_handler(event, params)
     |> chain(&module.event_handler(&1, event, params))
     |> wrap_socket(&{:noreply, &1})
   end
@@ -872,7 +815,6 @@ defmodule Phoenix.LiveController do
 
     socket
     |> run_plugs(module, %Message{name: message_atom, payload: message})
-    |> module.before_message_handler(message_atom, message)
     |> chain(&module.message_handler(&1, message_atom, message))
     |> wrap_socket(&{:noreply, &1})
   end
@@ -900,6 +842,12 @@ defmodule Phoenix.LiveController do
   defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
   defp wrap_socket(misc, _wrapper), do: misc
 
+  @doc """
+  Define a callback that acts on a socket before action, event or essage handler.
+
+  Read more about the role that this macro plays in the live controller pipeline in docs for
+  `Phoenix.LiveController`.
+  """
   defmacro plug(target, opts \\ nil) do
     {target, opts, conditions} = if opts do
       {opts, conditions} = extract_when(opts)
