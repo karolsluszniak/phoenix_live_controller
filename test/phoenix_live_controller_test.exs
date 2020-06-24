@@ -203,7 +203,7 @@ defmodule Phoenix.LiveControllerTest do
     assert socket.assigns.message_handler_override
   end
 
-  test "pipelines: unless_redirected/2" do
+  test "pipelines: chain/2" do
     socket =
       %Phoenix.LiveView.Socket{}
       |> assign(:called, false)
@@ -216,8 +216,8 @@ defmodule Phoenix.LiveControllerTest do
       assign(socket, :called, true)
     end
 
-    assert Phoenix.LiveController.unless_redirected(socket, func).assigns.called
-    refute Phoenix.LiveController.unless_redirected(redirected_socket, func).assigns.called
+    assert Phoenix.LiveController.chain(socket, func).assigns.called
+    refute Phoenix.LiveController.chain(redirected_socket, func).assigns.called
   end
 
   test "handling messages" do
