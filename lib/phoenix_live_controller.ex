@@ -529,6 +529,18 @@ defmodule Phoenix.LiveController do
                       event_handler: 3,
                       message_handler: 3
 
+  defmodule Action do
+    defstruct [type: :action, name: nil, params: nil]
+  end
+
+  defmodule Event do
+    defstruct [type: :event, name: nil, params: nil]
+  end
+
+  defmodule Message do
+    defstruct [type: :message, name: nil, payload: nil]
+  end
+
   defmacro __using__(opts) do
     view_module =
       __CALLER__.module
@@ -545,6 +557,7 @@ defmodule Phoenix.LiveController do
       Module.register_attribute(__MODULE__, :actions, accumulate: true)
       Module.register_attribute(__MODULE__, :events, accumulate: true)
       Module.register_attribute(__MODULE__, :messages, accumulate: true)
+      Module.register_attribute(__MODULE__, :plugs, accumulate: true)
 
       @on_definition unquote(__MODULE__)
       @before_compile unquote(__MODULE__)
@@ -605,10 +618,13 @@ defmodule Phoenix.LiveController do
       Module.delete_attribute(__MODULE__, :event_handler)
       Module.delete_attribute(__MODULE__, :message_handler)
 
+      @plugs_in_order Enum.reverse(@plugs)
+
       @doc false
       def __live_controller__(:actions), do: @actions
       def __live_controller__(:events), do: @events
       def __live_controller__(:messages), do: @messages
+      def __live_controller__(:plugs), do: @plugs_in_order
 
       def handle_info(message, socket),
         do: unquote(__MODULE__)._handle_message(__MODULE__, message, socket)
@@ -657,9 +673,24 @@ defmodule Phoenix.LiveController do
     socket
     |> Map.put_new(:mounted?, false)
     |> module.apply_session(session)
+    |> run_plugs(module, %Action{name: action, params: params})
     |> unless_redirected(&module.before_action_handler(&1, action, params))
     |> unless_redirected(&module.action_handler(&1, action, params))
     |> wrap_socket(&{:ok, &1})
+  end
+
+  defp run_plugs(socket, module, payload) do
+    plugs = module.__live_controller__(:plugs)
+
+    Enum.reduce(plugs, socket, fn {target, opts}, socket ->
+      unless_redirected(socket, fn socket ->
+        if opts do
+          module.__live_controller_plug__(target, socket, payload, opts)
+        else
+          module.__live_controller_plug__(target, socket, payload)
+        end
+      end)
+    end)
   end
 
   def _handle_params(module, params, _url, socket) do
@@ -671,6 +702,7 @@ defmodule Phoenix.LiveController do
       |> wrap_socket(&{:noreply, &1})
     else
       socket
+      |> run_plugs(module, %Action{name: action, params: params})
       |> unless_redirected(&module.before_action_handler(&1, action, params))
       |> unless_redirected(&module.action_handler(&1, action, params))
       |> wrap_socket(&{:noreply, &1})
@@ -695,6 +727,7 @@ defmodule Phoenix.LiveController do
     event = String.to_atom(event_string)
 
     socket
+    |> run_plugs(module, %Event{name: event, params: params})
     |> module.before_event_handler(event, params)
     |> unless_redirected(&module.event_handler(&1, event, params))
     |> wrap_socket(&{:noreply, &1})
@@ -737,6 +770,7 @@ defmodule Phoenix.LiveController do
         """)
 
     socket
+    |> run_plugs(module, %Message{name: message_atom, payload: message})
     |> module.before_message_handler(message_atom, message)
     |> unless_redirected(&module.message_handler(&1, message_atom, message))
     |> wrap_socket(&{:noreply, &1})
@@ -764,4 +798,95 @@ defmodule Phoenix.LiveController do
 
   defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
   defp wrap_socket(misc, _wrapper), do: misc
+
+  defmacro plug(target, opts \\ nil) do
+    {target, opts, conditions} = if opts do
+      {opts, conditions} = extract_when(opts)
+      {target, opts, conditions}
+    else
+      {target, conditions} = extract_when(target)
+      {target, nil, conditions}
+    end
+
+    {target, target_mod, target_fun} = case target do
+      atom when is_atom(atom) ->
+        {target, nil, atom}
+
+      ast = {:__aliases__, _meta, _parts} ->
+        mod = Macro.expand(ast, __CALLER__)
+        {{mod, :call}, mod, :call}
+
+      {ast = {:__aliases__, _meta, _parts}, fun} ->
+        mod = Macro.expand(ast, __CALLER__)
+        {{mod, fun}, mod, fun}
+    end
+
+    plug = {target, opts}
+
+    cond do
+      opts && target_mod ->
+        quote do
+          @plugs unquote(Macro.escape(plug))
+
+          def __live_controller_plug__(unquote(target), socket, payload, opts) do
+            var!(type) = payload.type
+            var!(name) = payload.name
+            if var!(type) && var!(name) && unquote(conditions) do
+              unquote(target_mod).unquote(target_fun)(socket, payload, opts)
+            else
+              socket
+            end
+          end
+        end
+
+      opts ->
+        quote do
+          @plugs unquote(Macro.escape(plug))
+
+          def __live_controller_plug__(unquote(target), socket, payload, opts) do
+            var!(type) = payload.type
+            var!(name) = payload.name
+            if var!(type) && var!(name) && unquote(conditions) do
+              unquote(target_fun)(socket, payload, opts)
+            else
+              socket
+            end
+          end
+        end
+
+      target_mod ->
+        quote do
+          @plugs unquote(Macro.escape(plug))
+
+          def __live_controller_plug__(unquote(target), socket, payload) do
+            var!(type) = payload.type
+            var!(name) = payload.name
+            if var!(type) && var!(name) && unquote(conditions) do
+              unquote(target_mod).unquote(target_fun)(socket, payload)
+            else
+              socket
+            end
+          end
+        end
+
+      true ->
+        quote do
+          @plugs unquote(Macro.escape(plug))
+
+          def __live_controller_plug__(unquote(target), socket, payload) do
+            var!(type) = payload.type
+            var!(name) = payload.name
+            if var!(type) && var!(name) && unquote(conditions) do
+              unquote(target_fun)(socket, payload)
+            else
+              socket
+            end
+          end
+        end
+
+    end
+  end
+
+  defp extract_when({:when, _, [left, when_conditions]}), do: {left, when_conditions}
+  defp extract_when(other), do: other
 end
