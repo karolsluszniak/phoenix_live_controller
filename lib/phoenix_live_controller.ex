@@ -331,10 +331,10 @@ defmodule Phoenix.LiveController do
   Phoenix controllers are [backed by the power of Plug
   pipelines](https://hexdocs.pm/phoenix/Phoenix.Controller.html#module-plug-pipeline) in order to
   organize common code called before actions and to allow halting early. LiveController provides
-  similar solution for these problems via `plug/2` macro supported by the `chain/2`
+  similar solution for these problems via `plug/1` macro supported by the `chain/2`
   helper function.
 
-  `plug/2` allows to define callbacks that are called in a chain in order to act on a socket before
+  `plug/1` allows to define callbacks that are called in a chain in order to act on a socket before
   an actual action, event or message handler is called:
 
       defmodule MyAppWeb.ArticleLive do
@@ -353,7 +353,18 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  It's possible to scope given plug to only a subset of handlers:
+  There are multiple ways to specify plug callback:
+
+  - `plug :require_authenticated_user` - calls local function with `socket` argument
+  - `plug LiveUserAuth` - calls external module's `call` function with `socket` argument
+  - `plug {LiveUserAuth, :require_authenticated_user}` - calls external function with `socket` argument
+  - `plug require_authenticated_user(...args)` - calls local function with arbitrary args
+  - `plug LiveUserAuth.require_authenticated_user(...args)` - calls external function with arbitrary args
+
+  > **Note**: `Phoenix.LiveController.Plug` behaviour is available for defining module plugs that
+  > are expected to expose a single `call(socket)` plug function (second case above).
+
+  It's possible to scope given plug to only a subset of handlers with the `when` condition:
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
@@ -361,16 +372,21 @@ defmodule Phoenix.LiveController do
         plug :require_authenticated_user when action not in [:index, :show]
       end
 
-  The `when` condition is evaluated at compile-time with `action`, `event` and `message` variables
-  made available for sake of filtering. Depending on the context in which the plug is called, one of
-  them includes the handler name and remaining ones are `nil`.
+  Following variables may be referenced when specifying arbitrary arguments or the `when`
+  condition:
 
-  It's also possible to call the plug with arbitrary options:
+  * `action` / `event` / `message` - action, event or message handler name (atom or `nil`)
+  * `socket` - current LiveView socket (`Phoenix.LiveView.Socket` struct)
+  * `params` - action or event params (map or `nil`)
+  * `payload` - message payload (message supported by message handler or `nil`)
+
+  All plug forms may be freely mixed with the `when` conditions:
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
 
-        plug :require_user_role, :admin
+        plug require_user_role(socket, :admin)
+        plug fetch_own_article(socket, params) when action in [:edit] or event in [:update, :delete]
 
         defp require_user_role(socket = %{assigns: %{current_user: user}}, required_role) do
           if user.role == required_role do
@@ -381,22 +397,8 @@ defmodule Phoenix.LiveController do
             |> push_redirect(to: "/")
           end
         end
-      end
 
-  Following variables may be referenced when specifying the options:
-
-  * `action` / `event` / `message` - action, event or message handler name (atom or `nil`)
-  * `params` - action or event params (map or `nil`)
-  * `payload` - message payload (atom/tuple or `nil`)
-
-  For example:
-
-      defmodule MyAppWeb.ArticleLive do
-        use MyAppWeb, :live_controller
-
-        plug :fetch_article_for_change, params when action in [:edit] or event in [:update, :delete]
-
-        defp fetch_article_for_change(
+        defp fetch_own_article(
           socket = %{assigns: %{current_user: %{id: user_id}}},
           %{"id" => article_id}
         ) do
@@ -412,47 +414,17 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  Finally, plugs may be defined in separate modules, either with `call` callback (in which case you
-  may use the `Phoenix.LiveController.Plug` behaviour) or with specific callback function name:
+  > **Pro tip**: Condition in `when` is not a guard, therefore it's possible to call any function
+  > within it. That makes it easy for example to only call a plug upon mounting and not when
+  > params are getting patched:
+  >
+  > ```
+  > plug fetch_article(socket, params) when not mounted?(socket)
+  > ```
 
-      defmodule MyAppWeb.Authorize do
-        @behaviour Phoenix.LiveController.Plug
-
-        @impl true
-        def call(socket = %{assigns: %{current_user: user}}, required_role) do
-          if user.role == role do
-            socket
-          else
-            socket
-            |> put_flash(:error, "You must be #{required_role} in order to continue.")
-            |> push_redirect(to: "/")
-          end
-        end
-      end
-
-      defmodule MyAppWeb.UserAuth do
-        defp require_authenticated_user(socket = %{assigns: %{current_user: user}}, _payload) do
-          if user do
-            socket
-          else
-            socket
-            |> put_flash(:error, "You must log in first.")
-            |> push_redirect(to: "/")
-          end
-        end
-      end
-
-      defmodule MyAppWeb.ArticleLive do
-        use MyAppWeb, :live_controller
-        alias MyAppWeb.{Authorize, UserAuth}
-
-        plug {UserAuth, :require_authenticated_user}
-        plug Authorize, :admin
-      end
-
-  If multiple plugs are defined like above, they'll be called in a chain. If any of them redirects
-  the socket or returns a tuple instead of just socket then the chain will be halted, which will
-  also prevent action, event or message handler from being called.
+  If multiple plugs are defined, they'll be called in a chain. If any of them redirects the socket
+  or returns a tuple instead of just socket then the chain will be halted, which will also prevent
+  action, event or message handler from being called.
 
   This is guaranteed by internal use of the `chain/2` function. This simple helper calls
   any function that takes socket as argument & that returns it only if the socket wasn't previously
@@ -590,16 +562,6 @@ defmodule Phoenix.LiveController do
                 | {:ok, Socket.t()}
                 | {:ok, Socket.t(), keyword()}
                 | {:noreply, Socket.t()}
-    @callback call(
-                socket :: Socket.t(),
-                payload :: any()
-              ) ::
-                Socket.t()
-                | {:ok, Socket.t()}
-                | {:ok, Socket.t(), keyword()}
-                | {:noreply, Socket.t()}
-
-    @optional_callbacks call: 1, call: 2
   end
 
   defmacro __using__(opts) do
@@ -735,17 +697,12 @@ defmodule Phoenix.LiveController do
 
   defp build_handler_plug_calls(name, type, plugs) do
     plugs
-    |> Enum.map(fn {caller, args, opts, conditions, target_mod, target_fun} ->
+    |> Enum.map(fn {caller, args, conditions, target_mod, target_fun} ->
       call = if args do
-        if target_mod,
-          do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
-          else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+        args = Enum.map(args, &build_plug_expression(&1, caller, type, name))
+        quote(do: unquote(target_fun)(unquote_splicing(args)))
       else
-        args =
-          if opts,
-            do: quote(do: [socket, unquote(build_plug_expression(opts, caller, type, name))]),
-            else: quote(do: [socket])
-
+        args = quote(do: [socket])
         if target_mod,
           do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
           else: quote(do: unquote(target_fun)(unquote_splicing(args)))
@@ -983,15 +940,8 @@ defmodule Phoenix.LiveController do
   Read more about the role that this macro plays in the live controller pipeline in docs for
   `Phoenix.LiveController`.
   """
-  defmacro plug(target, opts \\ nil) do
-    {target, opts, conditions} =
-      if opts do
-        {opts, conditions} = extract_when(opts)
-        {target, opts, conditions}
-      else
-        {target, conditions} = extract_when(target)
-        {target, nil, conditions}
-      end
+  defmacro plug(target) do
+    {target, conditions} = extract_when(target)
 
     {target_mod, target_fun, args} =
       case target do
@@ -1001,7 +951,7 @@ defmodule Phoenix.LiveController do
         {fun, _meta, args} -> {nil, fun, args}
       end
 
-    plug = {__CALLER__, args, opts, conditions, target_mod, target_fun}
+    plug = {__CALLER__, args, conditions, target_mod, target_fun}
 
     quote do
       @plugs unquote(Macro.escape(plug))
