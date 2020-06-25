@@ -311,7 +311,7 @@ defmodule Phoenix.LiveController do
 
         @action_handler true
         def index(socket, params) do
-          unless mounted?(socket),
+          if connected?(socket) && !mounted?(socket),
             do: :timer.send_interval(5_000, self(), :check_for_new_articles)
 
           socket = unless mounted?(socket),
@@ -326,49 +326,138 @@ defmodule Phoenix.LiveController do
   Note that an action handler will only be called once when mounting, even though native LiveView
   calls both `mount/3` and `handle_params/3` at that moment.
 
-  ## Pipelines
+  ## Chaining & plugs
 
   Phoenix controllers are [backed by the power of Plug
   pipelines](https://hexdocs.pm/phoenix/Phoenix.Controller.html#module-plug-pipeline) in order to
-  organize common code called before actions and to allow halting early. LiveController provides its
-  own simplified solution for these problems via optional `c:before_action_handler/3`,
-  `c:before_event_handler/3` and `c:before_message_handler/3` callbacks supported by the
-  `unless_redirected/2` helper function.
+  organize common code called before actions and to allow halting early. LiveController provides
+  similar solution for these problems via `plug/2` macro supported by the `chain/2`
+  helper function.
 
-  `c:before_action_handler/3` acts on a socket after session is applied but before an actual action
-  handler is called.
-
-      defmodule MyAppWeb.ArticleLive do
-        use MyAppWeb, :live_controller
-
-        @impl true
-        def before_action_handler(socket, _name, _params) do
-          assign(socket, page_title: "Blog")
-        end
-
-        # ...
-      end
-
-  Similarly, `c:before_event_handler/3` or `c:before_message_handler/3` callbacks act on a socket
-  before an actual event or message handler is called.
+  `plug/2` allows to define callbacks that are called in a chain in order to act on a socket before
+  an actual action, event or message handler is called:
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
 
-        @impl true
-        def before_event_handler(socket, _name, _params) do
-          require_authenticated_user(socket)
-        end
+        plug :require_authenticated_user
 
-        # ...
+        defp require_authenticated_user(socket = %{assigns: %{current_user: user}}) do
+          if user do
+            socket
+          else
+            socket
+            |> put_flash(:error, "You must log in first.")
+            |> push_redirect(to: "/")
+          end
+        end
       end
 
-  After these callbacks, live controller calls `c:action_handler/3`, `c:event_handler/3` and
-  `c:message_handler/3` respectively, but only if the socket was not redirected which is guaranteed
-  by internal use of the `unless_redirected/2` function. This simple helper calls any function that
-  takes socket as argument & that returns it only if the socket wasn't previously redirected and
-  passes the socket through otherwise. It may also be used inside an actual action handler or event
-  handler code for a similar result.
+  It's possible to scope given plug to only a subset of handlers:
+
+      defmodule MyAppWeb.ArticleLive do
+        use MyAppWeb, :live_controller
+
+        plug :require_authenticated_user when action not in [:index, :show]
+      end
+
+  The `when` condition is evaluated at compile-time with `action`, `event` and `message` variables
+  made available for sake of filtering. Depending on the context in which the plug is called, one of
+  them includes the handler name and remaining ones are `nil`.
+
+  It's also possible to call the plug with arbitrary options:
+
+      defmodule MyAppWeb.ArticleLive do
+        use MyAppWeb, :live_controller
+
+        plug :require_user_role, :admin
+
+        defp require_user_role(socket = %{assigns: %{current_user: user}}, required_role) do
+          if user.role == required_role do
+            socket
+          else
+            socket
+            |> put_flash(:error, "You must be #{required_role} in order to continue.")
+            |> push_redirect(to: "/")
+          end
+        end
+      end
+
+  Following variables may be referenced when specifying the options:
+
+  * `action` / `event` / `message` - action, event or message handler name (atom or `nil`)
+  * `params` - action or event params (map or `nil`)
+  * `payload` - message payload (atom/tuple or `nil`)
+
+  For example:
+
+      defmodule MyAppWeb.ArticleLive do
+        use MyAppWeb, :live_controller
+
+        plug :fetch_article_for_change, params when action in [:edit] or event in [:update, :delete]
+
+        defp fetch_article_for_change(
+          socket = %{assigns: %{current_user: %{id: user_id}}},
+          %{"id" => article_id}
+        ) do
+          case Blog.get_article!(id) do
+            article = %{author_id: ^user_id} ->
+              assign(socket, :article, article)
+
+            _ ->
+              socket
+              |> put_flash(:error, "You can't modify someone else's article.")
+              |> push_redirect(to: "/")
+          end
+        end
+      end
+
+  Finally, plugs may be defined in separate modules, either with `call` callback (in which case you
+  may use the `Phoenix.LiveController.Plug` behaviour) or with specific callback function name:
+
+      defmodule MyAppWeb.Authorize do
+        @behaviour Phoenix.LiveController.Plug
+
+        @impl true
+        def call(socket = %{assigns: %{current_user: user}}, required_role) do
+          if user.role == role do
+            socket
+          else
+            socket
+            |> put_flash(:error, "You must be #{required_role} in order to continue.")
+            |> push_redirect(to: "/")
+          end
+        end
+      end
+
+      defmodule MyAppWeb.UserAuth do
+        defp require_authenticated_user(socket = %{assigns: %{current_user: user}}, _payload) do
+          if user do
+            socket
+          else
+            socket
+            |> put_flash(:error, "You must log in first.")
+            |> push_redirect(to: "/")
+          end
+        end
+      end
+
+      defmodule MyAppWeb.ArticleLive do
+        use MyAppWeb, :live_controller
+        alias MyAppWeb.{Authorize, UserAuth}
+
+        plug {UserAuth, :require_authenticated_user}
+        plug Authorize, :admin
+      end
+
+  If multiple plugs are defined like above, they'll be called in a chain. If any of them redirects
+  the socket or returns a tuple instead of just socket then the chain will be halted, which will
+  also prevent action, event or message handler from being called.
+
+  This is guaranteed by internal use of the `chain/2` function. This simple helper calls
+  any function that takes socket as argument & that returns it only if the socket wasn't previously
+  redirected or wrapped in a tuple and passes the socket through otherwise. It may also be used
+  inside a plug or handler code for a similar result:
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
@@ -377,14 +466,14 @@ defmodule Phoenix.LiveController do
         def edit(socket, %{"id" => id}) do
           socket
           |> require_authenticated_user()
-          |> unless_redirected(&assign(&1, article: Blog.get_article!(id)))
-          |> unless_redirected(&authorize_article_author(&1, &1.assigns.article))
-          |> unless_redirected(&assign(&1, changeset: Blog.change_article(&.assigns.article)))
+          |> chain(&assign(&1, article: Blog.get_article!(id)))
+          |> chain(&authorize_article_author(&1, &1.assigns.article))
+          |> chain(&assign(&1, changeset: Blog.change_article(&.assigns.article)))
         end
       end
 
-  Finally, `c:action_handler/3`, `c:event_handler/3` and `c:message_handler/3` - rough equivalents
-  of
+  After all plugs are called without halting the chain, `c:action_handler/3`, `c:event_handler/3`
+  and `c:message_handler/3` - rough equivalents of
   [`action/2`](https://hexdocs.pm/phoenix/Phoenix.Controller.html#module-overriding-action-2-for-custom-arguments)
   plug in Phoenix controllers - complete the pipeline by calling functions named after specific
   actions, events or messages.
@@ -425,45 +514,6 @@ defmodule Phoenix.LiveController do
             ) :: Socket.t()
 
   @doc ~S"""
-  Acts on a socket after session is applied but before an actual action handler is called.
-
-  Read more about the role that this callback plays in the live controller pipeline and the
-  consequences of returning redirected socket from this callback in docs for
-  `Phoenix.LiveController`.
-  """
-  @callback before_action_handler(
-              socket :: Socket.t(),
-              name :: atom,
-              params :: Socket.unsigned_params()
-            ) :: Socket.t()
-
-  @doc ~S"""
-  Acts on a socket before an actual event handler is called.
-
-  Read more about the role that this callback plays in the live controller pipeline and the
-  consequences of returning redirected socket from this callback in docs for
-  `Phoenix.LiveController`.
-  """
-  @callback before_event_handler(
-              socket :: Socket.t(),
-              name :: atom,
-              params :: Socket.unsigned_params()
-            ) :: Socket.t()
-
-  @doc ~S"""
-  Acts on a socket before an actual message handler is called.
-
-  Read more about the role that this callback plays in the live controller pipeline and the
-  consequences of returning redirected socket from this callback in docs for
-  `Phoenix.LiveController`.
-  """
-  @callback before_message_handler(
-              socket :: Socket.t(),
-              name :: atom,
-              message :: any
-            ) :: Socket.t()
-
-  @doc ~S"""
   Invokes action handler for specific action.
 
   It can be overridden, e.g. in order to modify the list of arguments passed to action handlers.
@@ -491,7 +541,11 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) :: Socket.t()
+            ) ::
+              Socket.t()
+              | {:ok, Socket.t()}
+              | {:ok, Socket.t(), keyword()}
+              | {:noreply, Socket.t()}
 
   @doc ~S"""
   Invokes event handler for specific event.
@@ -505,7 +559,7 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) :: Socket.t()
+            ) :: Socket.t() | {:ok, Socket.t()}
 
   @doc ~S"""
   Invokes message handler for specific message.
@@ -519,15 +573,34 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               message :: any
-            ) :: Socket.t()
+            ) :: Socket.t() | {:noreply, Socket.t()}
 
   @optional_callbacks apply_session: 2,
-                      before_action_handler: 3,
-                      before_event_handler: 3,
-                      before_message_handler: 3,
                       action_handler: 3,
                       event_handler: 3,
                       message_handler: 3
+
+  defmodule Plug do
+    @moduledoc """
+    Defines plug module for use with Phoenix live controllers.
+    """
+
+    @callback call(socket :: Socket.t()) ::
+                Socket.t()
+                | {:ok, Socket.t()}
+                | {:ok, Socket.t(), keyword()}
+                | {:noreply, Socket.t()}
+    @callback call(
+                socket :: Socket.t(),
+                payload :: any()
+              ) ::
+                Socket.t()
+                | {:ok, Socket.t()}
+                | {:ok, Socket.t(), keyword()}
+                | {:noreply, Socket.t()}
+
+    @optional_callbacks call: 1, call: 2
+  end
 
   defmacro __using__(opts) do
     view_module =
@@ -545,6 +618,7 @@ defmodule Phoenix.LiveController do
       Module.register_attribute(__MODULE__, :actions, accumulate: true)
       Module.register_attribute(__MODULE__, :events, accumulate: true)
       Module.register_attribute(__MODULE__, :messages, accumulate: true)
+      Module.register_attribute(__MODULE__, :plugs, accumulate: true)
 
       @on_definition unquote(__MODULE__)
       @before_compile unquote(__MODULE__)
@@ -554,13 +628,34 @@ defmodule Phoenix.LiveController do
       # Implementations of Phoenix.LiveView callbacks
 
       def mount(params, session, socket),
-        do: unquote(__MODULE__)._mount(__MODULE__, params, session, socket)
+        do:
+          unquote(__MODULE__)._mount(
+            __MODULE__,
+            &__live_controller_before__/3,
+            params,
+            session,
+            socket
+          )
 
       def handle_params(params, url, socket),
-        do: unquote(__MODULE__)._handle_params(__MODULE__, params, url, socket)
+        do:
+          unquote(__MODULE__)._handle_params(
+            __MODULE__,
+            &__live_controller_before__/3,
+            params,
+            url,
+            socket
+          )
 
       def handle_event(event_string, params, socket),
-        do: unquote(__MODULE__)._handle_event(__MODULE__, event_string, params, socket)
+        do:
+          unquote(__MODULE__)._handle_event(
+            __MODULE__,
+            &__live_controller_before__/3,
+            event_string,
+            params,
+            socket
+          )
 
       def render(assigns = %{live_action: action}),
         do: unquote(view_module).render("#{action}.html", assigns)
@@ -568,15 +663,6 @@ defmodule Phoenix.LiveController do
       # Default implementations of Phoenix.LiveController callbacks
 
       def apply_session(socket, _session),
-        do: socket
-
-      def before_action_handler(socket, _name, _params),
-        do: socket
-
-      def before_event_handler(socket, _name, _params),
-        do: socket
-
-      def before_message_handler(socket, _name, _message),
         do: socket
 
       def action_handler(socket, name, params),
@@ -592,27 +678,121 @@ defmodule Phoenix.LiveController do
                      action_handler: 3,
                      event_handler: 3,
                      message_handler: 3,
-                     before_action_handler: 3,
-                     before_event_handler: 3,
-                     before_message_handler: 3,
                      render: 1
     end
   end
 
-  defmacro __before_compile__(_env) do
+  defmacro __before_compile__(env) do
+    build_handler_before(env.module) ++
+      [
+        quote do
+          Module.delete_attribute(__MODULE__, :action_handler)
+          Module.delete_attribute(__MODULE__, :event_handler)
+          Module.delete_attribute(__MODULE__, :message_handler)
+
+          @doc false
+          def __live_controller__(:actions), do: @actions
+          def __live_controller__(:events), do: @events
+          def __live_controller__(:messages), do: @messages
+
+          def handle_info(message, socket),
+            do:
+              unquote(__MODULE__)._handle_message(
+                __MODULE__,
+                &__live_controller_before__/3,
+                message,
+                socket
+              )
+        end
+      ]
+  end
+
+  defp build_handler_before(module) do
+    handlers =
+      (Module.get_attribute(module, :actions) |> Enum.map(&{&1, :action})) ++
+        (Module.get_attribute(module, :events) |> Enum.map(&{&1, :event})) ++
+        (Module.get_attribute(module, :messages) |> Enum.map(&{&1, :message}))
+
+    plugs = Module.get_attribute(module, :plugs)
+
+    Enum.map(handlers, fn {name, type} ->
+      action = if type == :action, do: name
+      event = if type == :event, do: name
+      message = if type == :message, do: name
+
+      matching_plugs =
+        Enum.filter(plugs, fn
+          {_caller, true, _target_mod, _target_fun, _opts} ->
+            true
+
+          {caller, conditions, _target_mod, _target_fun, _opts} ->
+            binding = [action: action, event: event, message: message]
+            {passed, _} = Code.eval_quoted(conditions, binding, caller)
+            passed
+        end)
+
+      quote do
+        defp __live_controller_before__(socket, unquote(name), payload) do
+          unquote(build_handler_plug_calls(name, type, matching_plugs))
+        end
+      end
+    end)
+  end
+
+  defp build_handler_plug_calls(_, _, []) do
     quote do
-      Module.delete_attribute(__MODULE__, :action_handler)
-      Module.delete_attribute(__MODULE__, :event_handler)
-      Module.delete_attribute(__MODULE__, :message_handler)
-
-      @doc false
-      def __live_controller__(:actions), do: @actions
-      def __live_controller__(:events), do: @events
-      def __live_controller__(:messages), do: @messages
-
-      def handle_info(message, socket),
-        do: unquote(__MODULE__)._handle_message(__MODULE__, message, socket)
+      socket
     end
+  end
+
+  defp build_handler_plug_calls(name, type, matching_plugs) do
+    with_params = type in [:action, :event]
+    with_payload = type == :message
+    action = if type == :action, do: name
+    event = if type == :event, do: name
+    message = if type == :message, do: name
+
+    matching_plugs
+    |> Enum.map(fn {_caller, _conditions, target_mod, target_fun, opts} ->
+      opts_expr =
+        quote do
+          var!(params) = if unquote(with_params), do: payload
+          var!(payload) = if unquote(with_payload), do: payload
+          var!(action) = payload && unquote(action)
+          var!(event) = payload && unquote(event)
+          var!(message) = payload && unquote(message)
+
+          var!(params)
+          var!(payload)
+          var!(action)
+          var!(event)
+          var!(message)
+
+          unquote(opts)
+        end
+
+      opts_expr = Macro.expand(opts_expr, __ENV__)
+
+      args =
+        if opts,
+          do: quote(do: [socket, unquote(opts_expr)]),
+          else: quote(do: [socket])
+
+      if target_mod,
+        do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+        else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+    end)
+    |> Enum.map(fn call ->
+      quote(do: chain(socket, fn socket -> unquote(call) end))
+    end)
+    |> Enum.reverse()
+    |> Enum.reduce(fn
+      {{:., [], target}, [], [_socket | rem_args]}, last_socket ->
+        {{:., [], target}, [], [last_socket | rem_args]}
+
+      {name, [], [_socket | rem_args]}, last_socket ->
+        {name, [], [last_socket | rem_args]}
+    end)
   end
 
   def __on_definition__(env, _kind, name, _args, _guards, _body) do
@@ -628,7 +808,7 @@ defmodule Phoenix.LiveController do
     end
   end
 
-  def _mount(module, params, session, socket) do
+  def _mount(module, before_callback, params, session, socket) do
     action =
       socket.assigns[:live_action] ||
         raise """
@@ -657,12 +837,12 @@ defmodule Phoenix.LiveController do
     socket
     |> Map.put_new(:mounted?, false)
     |> module.apply_session(session)
-    |> unless_redirected(&module.before_action_handler(&1, action, params))
-    |> unless_redirected(&module.action_handler(&1, action, params))
+    |> before_callback.(action, params)
+    |> chain(&module.action_handler(&1, action, params))
     |> wrap_socket(&{:ok, &1})
   end
 
-  def _handle_params(module, params, _url, socket) do
+  def _handle_params(module, before_callback, params, _url, socket) do
     action = socket.assigns.live_action
 
     unless Map.get(socket, :mounted?) do
@@ -671,13 +851,13 @@ defmodule Phoenix.LiveController do
       |> wrap_socket(&{:noreply, &1})
     else
       socket
-      |> unless_redirected(&module.before_action_handler(&1, action, params))
-      |> unless_redirected(&module.action_handler(&1, action, params))
+      |> before_callback.(action, params)
+      |> chain(&module.action_handler(&1, action, params))
       |> wrap_socket(&{:noreply, &1})
     end
   end
 
-  def _handle_event(module, event_string, params, socket) do
+  def _handle_event(module, before_callback, event_string, params, socket) do
     unless Enum.any?(module.__live_controller__(:events), &(to_string(&1) == event_string)),
       do:
         raise("""
@@ -695,24 +875,29 @@ defmodule Phoenix.LiveController do
     event = String.to_atom(event_string)
 
     socket
-    |> module.before_event_handler(event, params)
-    |> unless_redirected(&module.event_handler(&1, event, params))
+    |> before_callback.(event, params)
+    |> chain(&module.event_handler(&1, event, params))
     |> wrap_socket(&{:noreply, &1})
   end
 
-  def _handle_message(module, message, socket) do
-    message_atom =
+  def _handle_message(module, before_callback, message_payload, socket) do
+    message_key =
       cond do
-        is_atom(message) -> message
-        is_tuple(message) and is_atom(elem(message, 0)) -> elem(message, 0)
-        true -> nil
+        is_atom(message_payload) ->
+          message_payload
+
+        is_tuple(message_payload) and is_atom(elem(message_payload, 0)) ->
+          elem(message_payload, 0)
+
+        true ->
+          nil
       end
 
-    unless message_atom,
+    unless message_key,
       do:
         raise("""
-        Message #{inspect(message)} cannot be handled by message handler and #{inspect(module)}
-        doesn't implement handle_info/3 that would handle it instead.
+        Message #{inspect(message_payload)} cannot be handled by message handler and
+        #{inspect(module)} doesn't implement handle_info/3 that would handle it instead.
 
         Make sure that appropriate handle_info/3 function matching this message is defined:
 
@@ -722,23 +907,23 @@ defmodule Phoenix.LiveController do
 
         """)
 
-    unless Enum.member?(module.__live_controller__(:messages), message_atom),
+    unless Enum.member?(module.__live_controller__(:messages), message_key),
       do:
         raise("""
-        #{inspect(module)} doesn't implement message handler for #{inspect(message)} message.
+        #{inspect(module)} doesn't implement message handler for #{inspect(message_payload)} message.
 
-        Make sure that #{message_atom} function is defined and annotated as message handler:
+        Make sure that #{message_key} function is defined and annotated as message handler:
 
             @message_handler true
-            def #{message_atom}(socket, message) do
+            def #{message_key}(socket, message) do
               # ...
             end
 
         """)
 
     socket
-    |> module.before_message_handler(message_atom, message)
-    |> unless_redirected(&module.message_handler(&1, message_atom, message))
+    |> before_callback.(message_key, message_payload)
+    |> chain(&module.message_handler(&1, message_key, message_payload))
     |> wrap_socket(&{:noreply, &1})
   end
 
@@ -748,9 +933,13 @@ defmodule Phoenix.LiveController do
   Read more about the role that this function plays in the live controller pipeline in docs for
   `Phoenix.LiveController`.
   """
-  @spec unless_redirected(socket :: Socket.t(), func :: function) :: Socket.t()
-  def unless_redirected(socket = %{redirected: nil}, func), do: func.(socket)
-  def unless_redirected(redirected_socket, _func), do: redirected_socket
+  @spec chain(
+          socket ::
+            Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()},
+          func :: function
+        ) :: Socket.t()
+  def chain(socket = %{redirected: nil}, func), do: func.(socket)
+  def chain(halted_socket, _func), do: halted_socket
 
   @doc ~S"""
   Returns true if the socket was previously mounted by action handler.
@@ -764,4 +953,37 @@ defmodule Phoenix.LiveController do
 
   defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
   defp wrap_socket(misc, _wrapper), do: misc
+
+  @doc """
+  Define a callback that acts on a socket before action, event or essage handler.
+
+  Read more about the role that this macro plays in the live controller pipeline in docs for
+  `Phoenix.LiveController`.
+  """
+  defmacro plug(target, opts \\ nil) do
+    {target, opts, conditions} =
+      if opts do
+        {opts, conditions} = extract_when(opts)
+        {target, opts, conditions}
+      else
+        {target, conditions} = extract_when(target)
+        {target, nil, conditions}
+      end
+
+    {target_mod, target_fun} =
+      case target do
+        atom when is_atom(atom) -> {nil, atom}
+        ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call}
+        {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
+      end
+
+    plug = {__CALLER__, conditions, target_mod, target_fun, opts}
+
+    quote do
+      @plugs unquote(Macro.escape(plug))
+    end
+  end
+
+  defp extract_when({:when, _, [left, when_conditions]}), do: {left, when_conditions}
+  defp extract_when(other), do: {other, true}
 end

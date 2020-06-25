@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0-dev
+
+### Enhancements
+
+- Introduce plug system along with `Phoenix.LiveController.plug/2` macro
+- Allow to mount with extra options and halt the plug chain by wrapping returned socket in a tuple
+
+### Backwards incompatible changes
+
+- Rename `unless_redirected/2` to `chain/2`
+- Remove `c:before_action_handler/3`, `c:before_event_handler/3` and `c:before_message_handler/3`
+  - use plugs instead
+
 ## 0.3.0 (2020-04-21)
 
 This release pushes LiveController from being a simple action & event router into a more complete
