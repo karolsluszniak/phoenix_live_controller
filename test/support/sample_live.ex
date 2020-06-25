@@ -1,5 +1,15 @@
+defmodule SampleLive.Some.NestedPlug do
+  @behaviour Phoenix.LiveController.Plug
+
+  @impl true
+  def call(socket) do
+    socket
+  end
+end
+
 defmodule SampleLive do
   use Phoenix.LiveController
+  alias SampleLive.Some.NestedPlug
 
   defmodule BeforeGlobal do
     @behaviour Phoenix.LiveController.Plug
@@ -22,6 +32,7 @@ defmodule SampleLive do
   end
 
   plug BeforeGlobal, {action || event || message, params || payload}
+  plug NestedPlug
 
   @skip_action :index_with_opts
   plug {BeforeGlobal, :other}, :arg when action != @skip_action and !message

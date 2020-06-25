@@ -326,7 +326,7 @@ defmodule Phoenix.LiveController do
   Note that an action handler will only be called once when mounting, even though native LiveView
   calls both `mount/3` and `handle_params/3` at that moment.
 
-  ## Plugs and pipelines
+  ## Chaining & plugs
 
   Phoenix controllers are [backed by the power of Plug
   pipelines](https://hexdocs.pm/phoenix/Phoenix.Controller.html#module-plug-pipeline) in order to
@@ -361,9 +361,9 @@ defmodule Phoenix.LiveController do
         plug :require_authenticated_user when action not in [:index, :show]
       end
 
-  Extra `action`, `event` and `message` variables are injected into the `when` condition - depending
-  on the context in which the plug is called, one of them includes the handler name and remaining
-  ones are `nil`.
+  The `when` condition is evaluated at compile-time with `action`, `event` and `message` variables
+  made available for sake of filtering. Depending on the context in which the plug is called, one of
+  them includes the handler name and remaining ones are `nil`.
 
   It's also possible to call the plug with arbitrary options:
 
@@ -383,11 +383,11 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  When specifying the options you may refer to following extra variables:
+  Following variables may be referenced when specifying the options:
 
-  * `action` / `event` / `message` - action, event or message handler name (atom)
-  * `params` - action or event params (map)
-  * `payload` - message payload (atom or tuple)
+  * `action` / `event` / `message` - action, event or message handler name (atom or `nil`)
+  * `params` - action or event params (map or `nil`)
+  * `payload` - message payload (atom/tuple or `nil`)
 
   For example:
 
@@ -582,9 +582,14 @@ defmodule Phoenix.LiveController do
     """
 
     @callback call(
+                socket :: Socket.t()
+              ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+    @callback call(
                 socket :: Socket.t(),
                 payload :: any()
               ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+
+    @optional_callbacks call: 1, call: 2
   end
 
   defmacro __using__(opts) do
