@@ -691,13 +691,13 @@ defmodule Phoenix.LiveController do
 
       if matching_plugs == [] do
         quote do
-          def __live_controller_plug__(unquote(name), socket, _payload) do
+          def __live_controller_plugs__(unquote(name), socket, _payload) do
             socket
           end
         end
       else
         quote do
-          def __live_controller_plug__(unquote(name), socket, payload) do
+          def __live_controller_plugs__(unquote(name), socket, payload) do
             unquote(build_handler_plug_calls(name, type, matching_plugs))
           end
         end
@@ -800,10 +800,6 @@ defmodule Phoenix.LiveController do
     |> wrap_socket(&{:ok, &1})
   end
 
-  defp run_plugs(socket, module, name, payload) do
-    module.__live_controller_plug__(name, socket, payload)
-  end
-
   def _handle_params(module, params, _url, socket) do
     action = socket.assigns.live_action
 
@@ -842,18 +838,18 @@ defmodule Phoenix.LiveController do
     |> wrap_socket(&{:noreply, &1})
   end
 
-  def _handle_message(module, message, socket) do
-    message_atom =
+  def _handle_message(module, message_payload, socket) do
+    message_key =
       cond do
-        is_atom(message) -> message
-        is_tuple(message) and is_atom(elem(message, 0)) -> elem(message, 0)
+        is_atom(message_payload) -> message_payload
+        is_tuple(message_payload) and is_atom(elem(message_payload, 0)) -> elem(message_payload, 0)
         true -> nil
       end
 
-    unless message_atom,
+    unless message_key,
       do:
         raise("""
-        Message #{inspect(message)} cannot be handled by message handler and #{inspect(module)}
+        Message #{inspect(message_payload)} cannot be handled by message handler and #{inspect(module)}
         doesn't implement handle_info/3 that would handle it instead.
 
         Make sure that appropriate handle_info/3 function matching this message is defined:
@@ -864,24 +860,28 @@ defmodule Phoenix.LiveController do
 
         """)
 
-    unless Enum.member?(module.__live_controller__(:messages), message_atom),
+    unless Enum.member?(module.__live_controller__(:messages), message_key),
       do:
         raise("""
-        #{inspect(module)} doesn't implement message handler for #{inspect(message)} message.
+        #{inspect(module)} doesn't implement message handler for #{inspect(message_payload)} message.
 
-        Make sure that #{message_atom} function is defined and annotated as message handler:
+        Make sure that #{message_key} function is defined and annotated as message handler:
 
             @message_handler true
-            def #{message_atom}(socket, message) do
+            def #{message_key}(socket, message) do
               # ...
             end
 
         """)
 
     socket
-    |> run_plugs(module, message_atom, message)
-    |> chain(&module.message_handler(&1, message_atom, message))
+    |> run_plugs(module, message_key, message_payload)
+    |> chain(&module.message_handler(&1, message_key, message_payload))
     |> wrap_socket(&{:noreply, &1})
+  end
+
+  defp run_plugs(socket, module, name, payload) do
+    module.__live_controller_plugs__(name, socket, payload)
   end
 
   @doc ~S"""
