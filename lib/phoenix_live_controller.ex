@@ -719,27 +719,9 @@ defmodule Phoenix.LiveController do
     plugs = Module.get_attribute(module, :plugs)
 
     Enum.map(handlers, fn {name, type} ->
-      action = if type == :action, do: name
-      event = if type == :event, do: name
-      message = if type == :message, do: name
-
-      binding = [action: action, event: event, message: message]
-      binding_keys = Keyword.keys(binding)
-
-      matching_plugs =
-        Enum.filter(plugs, fn
-          {_caller, true, _target_mod, _target_fun, _opts} ->
-            true
-
-          {caller, conditions, _target_mod, _target_fun, _opts} ->
-            conditions = remove_ast_vars_context(conditions, binding_keys)
-            {passed, _} = Code.eval_quoted(conditions, binding, caller)
-            passed
-        end)
-
       quote do
         defp __live_controller_before__(socket, unquote(name), payload) do
-          unquote(build_handler_plug_calls(name, type, matching_plugs))
+          unquote(build_handler_plug_calls(name, type, plugs))
         end
       end
     end)
@@ -751,20 +733,27 @@ defmodule Phoenix.LiveController do
     end
   end
 
-  defp build_handler_plug_calls(name, type, matching_plugs) do
-    matching_plugs
-    |> Enum.map(fn {caller, _conditions, target_mod, target_fun, opts} ->
+  defp build_handler_plug_calls(name, type, plugs) do
+    plugs
+    |> Enum.map(fn {caller, opts, conditions, target_mod, target_fun} ->
       args =
         if opts,
-          do: quote(do: [socket, unquote(build_opts_expression(type, name, opts, caller))]),
+          do: quote(do: [socket, unquote(build_plug_expression(opts, caller, type, name))]),
           else: quote(do: [socket])
 
-      if target_mod,
+      call = if target_mod,
         do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
         else: quote(do: unquote(target_fun)(unquote_splicing(args)))
-    end)
-    |> Enum.map(fn call ->
-      quote(do: chain(socket, fn socket -> unquote(call) end))
+
+      quote do
+        chain(socket, fn socket ->
+          if unquote(build_plug_expression(conditions, caller, type, name)) do
+            unquote(call)
+          else
+            socket
+          end
+        end)
+      end
     end)
     |> Enum.reverse()
     |> Enum.reduce(fn
@@ -776,23 +765,26 @@ defmodule Phoenix.LiveController do
     end)
   end
 
-  defp build_opts_expression(type, name, opts, caller) do
+  defp build_plug_expression(opts, caller, type, name) do
     with_params = type in [:action, :event]
     with_payload = type == :message
     action = if type == :action, do: name
     event = if type == :event, do: name
     message = if type == :message, do: name
 
-    opts = remove_ast_vars_context(opts, [:params, :payload, :action, :event, :message])
+    opts = remove_ast_vars_context(opts, [:params, :payload, :action, :event, :message, :socket])
 
     opts_expr =
       quote do
+        var!(socket) = socket
+
         var!(params) = if unquote(with_params), do: payload
         var!(payload) = if unquote(with_payload), do: payload
         var!(action) = payload && unquote(action)
         var!(event) = payload && unquote(event)
         var!(message) = payload && unquote(message)
 
+        var!(socket)
         var!(params)
         var!(payload)
         var!(action)
@@ -1002,7 +994,7 @@ defmodule Phoenix.LiveController do
         {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
       end
 
-    plug = {__CALLER__, conditions, target_mod, target_fun, opts}
+    plug = {__CALLER__, opts, conditions, target_mod, target_fun}
 
     quote do
       @plugs unquote(Macro.escape(plug))

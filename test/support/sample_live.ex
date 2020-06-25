@@ -52,9 +52,17 @@ defmodule SampleLive do
   @skip_action :index_with_opts
   plug {BeforeGlobal, :other}, :arg when action != @skip_action and !message
 
+  plug :on_final_mount when action && connected?(socket) && !mounted?(socket)
+  defp on_final_mount(socket) do
+    if Map.get(socket.assigns, :final_mount_done) do
+      raise "mounting twice?"
+    else
+      assign(socket, :final_mount_done, true)
+    end
+  end
+
   plug :before_action_handler, %{p: params, key: :before_action_handler_called} when action
   plug :before_action_handler, %{p: params, key: :before_action_handler_called_two} when action
-
   defp before_action_handler(socket, %{p: params, key: key}) do
     history = Map.get(socket.assigns, :plug_history, [])
 
@@ -64,7 +72,6 @@ defmodule SampleLive do
   end
 
   plug :before_event_handler, params when event
-
   def before_event_handler(socket, params) do
     if params["redirect"],
       do: push_redirect(socket, to: "/"),
@@ -72,7 +79,6 @@ defmodule SampleLive do
   end
 
   plug :before_message_handler, payload when message
-
   def before_message_handler(socket, payload) do
     if payload == {:x, :redirect},
       do: push_redirect(socket, to: "/"),
