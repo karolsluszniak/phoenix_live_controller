@@ -5,11 +5,26 @@ defmodule SampleLive.Some.NestedPlug do
   def call(socket) do
     socket
   end
+
+  @impl true
+  def call(socket, {_action, _params}) do
+    socket
+  end
+end
+
+defmodule Reusable do
+  defmacro __using__(_) do
+    quote do
+      plug SampleLive.Some.NestedPlug when action == :nonexisting
+      plug SampleLive.Some.NestedPlug, {action, params}
+    end
+  end
 end
 
 defmodule SampleLive do
   use Phoenix.LiveController
   alias SampleLive.Some.NestedPlug
+  use Reusable
 
   defmodule BeforeGlobal do
     @behaviour Phoenix.LiveController.Plug

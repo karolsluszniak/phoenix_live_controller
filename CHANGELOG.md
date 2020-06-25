@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Bug fixes
+
+- Fix binding to special variables (`action`, `params`...) when plug call is quoted
+
 ## 0.4.0
 
 ### Enhancements

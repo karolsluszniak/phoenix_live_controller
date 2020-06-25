@@ -720,13 +720,16 @@ defmodule Phoenix.LiveController do
       event = if type == :event, do: name
       message = if type == :message, do: name
 
+      binding = [action: action, event: event, message: message]
+      binding_keys = Keyword.keys(binding)
+
       matching_plugs =
         Enum.filter(plugs, fn
           {_caller, true, _target_mod, _target_fun, _opts} ->
             true
 
           {caller, conditions, _target_mod, _target_fun, _opts} ->
-            binding = [action: action, event: event, message: message]
+            conditions = remove_ast_vars_context(conditions, binding_keys)
             {passed, _} = Code.eval_quoted(conditions, binding, caller)
             passed
         end)
@@ -753,7 +756,9 @@ defmodule Phoenix.LiveController do
     message = if type == :message, do: name
 
     matching_plugs
-    |> Enum.map(fn {_caller, _conditions, target_mod, target_fun, opts} ->
+    |> Enum.map(fn {caller, _conditions, target_mod, target_fun, opts} ->
+      opts = remove_ast_vars_context(opts, [:params, :payload, :action, :event, :message])
+
       opts_expr =
         quote do
           var!(params) = if unquote(with_params), do: payload
@@ -771,7 +776,7 @@ defmodule Phoenix.LiveController do
           unquote(opts)
         end
 
-      opts_expr = Macro.expand(opts_expr, __ENV__)
+      opts_expr = Macro.expand(opts_expr, caller)
 
       args =
         if opts,
@@ -793,6 +798,20 @@ defmodule Phoenix.LiveController do
       {name, [], [_socket | rem_args]}, last_socket ->
         {name, [], [last_socket | rem_args]}
     end)
+  end
+
+  defp remove_ast_vars_context(ast, vars) do
+    ast
+    |> Macro.prewalk(nil, fn
+      node = {var, meta, _}, nil ->
+        if var in vars,
+          do: {{var, Keyword.delete(meta, :counter), nil}, nil},
+          else: {node, nil}
+
+      node, nil ->
+        {node, nil}
+    end)
+    |> elem(0)
   end
 
   def __on_definition__(env, _kind, name, _args, _guards, _body) do
