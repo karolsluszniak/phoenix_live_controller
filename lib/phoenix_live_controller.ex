@@ -735,15 +735,21 @@ defmodule Phoenix.LiveController do
 
   defp build_handler_plug_calls(name, type, plugs) do
     plugs
-    |> Enum.map(fn {caller, opts, conditions, target_mod, target_fun} ->
-      args =
-        if opts,
-          do: quote(do: [socket, unquote(build_plug_expression(opts, caller, type, name))]),
-          else: quote(do: [socket])
+    |> Enum.map(fn {caller, args, opts, conditions, target_mod, target_fun} ->
+      call = if args do
+        if target_mod,
+          do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+          else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+      else
+        args =
+          if opts,
+            do: quote(do: [socket, unquote(build_plug_expression(opts, caller, type, name))]),
+            else: quote(do: [socket])
 
-      call = if target_mod,
-        do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
-        else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+        if target_mod,
+          do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+          else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+      end
 
       quote do
         chain(socket, fn socket ->
@@ -765,16 +771,16 @@ defmodule Phoenix.LiveController do
     end)
   end
 
-  defp build_plug_expression(opts, caller, type, name) do
+  defp build_plug_expression(ast, caller, type, name) do
     with_params = type in [:action, :event]
     with_payload = type == :message
     action = if type == :action, do: name
     event = if type == :event, do: name
     message = if type == :message, do: name
 
-    opts = remove_ast_vars_context(opts, [:params, :payload, :action, :event, :message, :socket])
+    ast = remove_ast_vars_context(ast, [:params, :payload, :action, :event, :message, :socket])
 
-    opts_expr =
+    ast_wrapped =
       quote do
         var!(socket) = socket
 
@@ -791,10 +797,10 @@ defmodule Phoenix.LiveController do
         var!(event)
         var!(message)
 
-        unquote(opts)
+        unquote(ast)
       end
 
-    Macro.expand(opts_expr, caller)
+    Macro.expand(ast_wrapped, caller)
   end
 
   defp remove_ast_vars_context(ast, vars) do
@@ -987,14 +993,15 @@ defmodule Phoenix.LiveController do
         {target, nil, conditions}
       end
 
-    {target_mod, target_fun} =
+    {target_mod, target_fun, args} =
       case target do
-        atom when is_atom(atom) -> {nil, atom}
-        ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call}
-        {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
+        atom when is_atom(atom) -> {nil, atom, nil}
+        ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call, nil}
+        {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun, nil}
+        {fun, _meta, args} -> {nil, fun, args}
       end
 
-    plug = {__CALLER__, opts, conditions, target_mod, target_fun}
+    plug = {__CALLER__, args, opts, conditions, target_mod, target_fun}
 
     quote do
       @plugs unquote(Macro.escape(plug))

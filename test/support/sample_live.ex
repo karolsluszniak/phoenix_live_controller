@@ -50,9 +50,9 @@ defmodule SampleLive do
   plug NestedPlug
 
   @skip_action :index_with_opts
-  plug {BeforeGlobal, :other}, :arg when action != @skip_action and !message
+  plug BeforeGlobal.other(socket, :arg) when action != @skip_action and !message
 
-  plug :on_final_mount when action && connected?(socket) && !mounted?(socket)
+  plug on_final_mount(socket) when action && connected?(socket) && !mounted?(socket)
   defp on_final_mount(socket) do
     if Map.get(socket.assigns, :final_mount_done) do
       raise "mounting twice?"
