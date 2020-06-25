@@ -5,11 +5,11 @@ defmodule SampleLive do
     @behaviour Phoenix.LiveController.Plug
 
     @impl true
-    def call(socket, payload) do
-      assign(socket, :global_plug_called, payload)
+    def call(socket, {type, name, params}) do
+      assign(socket, :global_plug_called, {type, name, params})
     end
 
-    def other(socket, {_payload, arg}) do
+    def other(socket, arg) do
       assign(socket, :other_global_plug_called, arg)
     end
   end
@@ -21,13 +21,13 @@ defmodule SampleLive do
       else: assign(socket, user: session["user"])
   end
 
-  plug BeforeGlobal, payload
-  plug {BeforeGlobal, :other}, {payload, :arg} when type != :message and name != :index_with_opts
+  plug BeforeGlobal, {type, name, params}
+  plug {BeforeGlobal, :other}, :arg when type != :message and name != :index_with_opts
 
-  plug :before_action_handler, %{p: payload, key: :before_action_handler_called} when type == :action
-  plug :before_action_handler, %{p: payload, key: :before_action_handler_called_two} when type == :action
+  plug :before_action_handler, %{p: params, key: :before_action_handler_called} when type == :action
+  plug :before_action_handler, %{p: params, key: :before_action_handler_called_two} when type == :action
 
-  defp before_action_handler(socket, %{p: %{params: params}, key: key}) do
+  defp before_action_handler(socket, %{p: params, key: key}) do
     history = Map.get(socket.assigns, :plug_history, [])
 
     if params["redirect"],
@@ -35,9 +35,9 @@ defmodule SampleLive do
       else: assign(socket, key, true) |> assign(:plug_history, history ++ [key])
   end
 
-  plug :before_event_handler, payload when type == :event
+  plug :before_event_handler, params when type == :event
 
-  def before_event_handler(socket, %{params: params}) do
+  def before_event_handler(socket, params) do
     if params["redirect"],
       do: push_redirect(socket, to: "/"),
       else: assign(socket, before_event_handler_called: true)

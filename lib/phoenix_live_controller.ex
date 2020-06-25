@@ -546,45 +546,6 @@ defmodule Phoenix.LiveController do
                       event_handler: 3,
                       message_handler: 3
 
-  defmodule Action do
-    @moduledoc """
-    Holds plug payload for actions.
-    """
-
-    @type t() :: %__MODULE__{
-            name: atom(),
-            params: map()
-          }
-
-    defstruct [name: nil, params: nil]
-  end
-
-  defmodule Event do
-    @moduledoc """
-    Holds plug payload for events.
-    """
-
-    @type t() :: %__MODULE__{
-            name: atom(),
-            params: map()
-          }
-
-    defstruct [name: nil, params: nil]
-  end
-
-  defmodule Message do
-    @moduledoc """
-    Holds plug payload for messages.
-    """
-
-    @type t() :: %__MODULE__{
-            name: atom(),
-            params: any()
-          }
-
-    defstruct [name: nil, params: nil]
-  end
-
   defmodule Plug do
     @moduledoc """
     Defines plug module for use with Phoenix live controllers.
@@ -592,18 +553,8 @@ defmodule Phoenix.LiveController do
 
     @callback call(
                 socket :: Socket.t(),
-                payload :: Action.t() | Event.t() | Message.t()
+                payload :: any()
               ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
-    @callback call(
-                socket :: Socket.t(),
-                payload :: Action.t() | Event.t() | Message.t(),
-                opts :: any()
-              ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
-
-
-    @optional_callbacks call: 2,
-                        call: 3
-
   end
 
   defmacro __using__(opts) do
@@ -701,29 +652,27 @@ defmodule Phoenix.LiveController do
 
       if matching_plugs == [] do
         quote do
-          def __live_controller_plug__(unquote(name), socket, payload) do
+          def __live_controller_plug__(unquote(name), socket, params) do
             socket
           end
         end
       else
         quote do
-          def __live_controller_plug__(unquote(name), socket, payload) do
-            unquote(build_handler_plug_calls(type, matching_plugs))
+          def __live_controller_plug__(unquote(name), socket, params) do
+            unquote(build_handler_plug_calls(name, type, matching_plugs))
           end
         end
       end
     end)
   end
 
-  defp build_handler_plug_calls(type, matching_plugs) do
+  defp build_handler_plug_calls(name, type, matching_plugs) do
     matching_plugs
     |> Enum.map(fn {_conditions, target_mod, target_fun, opts} ->
       opts_expr = quote do
-        var!(payload) = payload
-        var!(params) = payload.params
-        var!(name) = payload.name
+        var!(params) = params
+        var!(name) = unquote(name)
         var!(type) = unquote(type)
-        var!(payload)
         var!(params)
         var!(name)
         var!(type)
@@ -793,13 +742,13 @@ defmodule Phoenix.LiveController do
     socket
     |> Map.put_new(:mounted?, false)
     |> module.apply_session(session)
-    |> run_plugs(module, %Action{name: action, params: params})
+    |> run_plugs(module, action, params)
     |> chain(&module.action_handler(&1, action, params))
     |> wrap_socket(&{:ok, &1})
   end
 
-  defp run_plugs(socket, module, payload = %{name: name}) do
-    module.__live_controller_plug__(name, socket, payload)
+  defp run_plugs(socket, module, name, params) do
+    module.__live_controller_plug__(name, socket, params)
   end
 
   def _handle_params(module, params, _url, socket) do
@@ -811,7 +760,7 @@ defmodule Phoenix.LiveController do
       |> wrap_socket(&{:noreply, &1})
     else
       socket
-      |> run_plugs(module, %Action{name: action, params: params})
+      |> run_plugs(module, action, params)
       |> chain(&module.action_handler(&1, action, params))
       |> wrap_socket(&{:noreply, &1})
     end
@@ -835,7 +784,7 @@ defmodule Phoenix.LiveController do
     event = String.to_atom(event_string)
 
     socket
-    |> run_plugs(module, %Event{name: event, params: params})
+    |> run_plugs(module, event, params)
     |> chain(&module.event_handler(&1, event, params))
     |> wrap_socket(&{:noreply, &1})
   end
@@ -877,7 +826,7 @@ defmodule Phoenix.LiveController do
         """)
 
     socket
-    |> run_plugs(module, %Message{name: message_atom, params: message})
+    |> run_plugs(module, message_atom, message)
     |> chain(&module.message_handler(&1, message_atom, message))
     |> wrap_socket(&{:noreply, &1})
   end
