@@ -674,18 +674,12 @@ defmodule Phoenix.LiveController do
       event = if type == :event, do: name
       message = if type == :message, do: name
 
-      matching_plugs = Enum.filter(plugs, fn {conditions, _target_mod, _target_fun, _opts} ->
+      matching_plugs = Enum.filter(plugs, fn {caller, conditions, _target_mod, _target_fun, _opts} ->
         if conditions == true do
           true
         else
-          conditions_check = quote do
-            var!(action) = unquote(action)
-            var!(event) = unquote(event)
-            var!(message) = unquote(message)
-
-            unquote(conditions)
-          end
-          {passed, _} = Code.eval_quoted(conditions_check, [name_in: name, type_in: type], __ENV__)
+          binding = [action: action, event: event, message: message]
+          {passed, _} = Code.eval_quoted(conditions, binding, caller)
           passed
         end
       end)
@@ -714,7 +708,7 @@ defmodule Phoenix.LiveController do
     message = if type == :message, do: name
 
     matching_plugs
-    |> Enum.map(fn {_conditions, target_mod, target_fun, opts} ->
+    |> Enum.map(fn {_caller, _conditions, target_mod, target_fun, opts} ->
       opts_expr = quote do
         var!(params) = if unquote(with_params), do: payload
         var!(payload) = if unquote(with_payload), do: payload
@@ -801,8 +795,8 @@ defmodule Phoenix.LiveController do
     |> wrap_socket(&{:ok, &1})
   end
 
-  defp run_plugs(socket, module, name, params) do
-    module.__live_controller_plug__(name, socket, params)
+  defp run_plugs(socket, module, name, payload) do
+    module.__live_controller_plug__(name, socket, payload)
   end
 
   def _handle_params(module, params, _url, socket) do
@@ -929,7 +923,7 @@ defmodule Phoenix.LiveController do
       {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
     end
 
-    plug = {conditions, target_mod, target_fun, opts}
+    plug = {__CALLER__, conditions, target_mod, target_fun, opts}
 
     quote do
       @plugs unquote(Macro.escape(plug))

@@ -22,7 +22,9 @@ defmodule SampleLive do
   end
 
   plug BeforeGlobal, {action || event || message, params || payload}
-  plug {BeforeGlobal, :other}, :arg when action != :index_with_opts and !message
+
+  @skip_action :index_with_opts
+  plug {BeforeGlobal, :other}, :arg when action != @skip_action and !message
 
   plug :before_action_handler, %{p: params, key: :before_action_handler_called} when action
   plug :before_action_handler, %{p: params, key: :before_action_handler_called_two} when action
