@@ -13,6 +13,14 @@ defmodule Phoenix.LiveControllerTest do
     assert %{other_global_plug_called: :arg} = socket.assigns
   end
 
+  test "mounting actions without plugs" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SimpleLive.mount(%{}, %{}, socket)
+  end
+
   test "mounting actions with options" do
     socket =
       %Phoenix.LiveView.Socket{}
@@ -275,8 +283,8 @@ defmodule Phoenix.LiveControllerTest do
     socket = %Phoenix.LiveView.Socket{}
 
     expected_error = """
-    Message 1 cannot be handled by message handler and SampleLive
-    doesn't implement handle_info/3 that would handle it instead.
+    Message 1 cannot be handled by message handler and
+    SampleLive doesn't implement handle_info/3 that would handle it instead.
 
     Make sure that appropriate handle_info/3 function matching this message is defined:
 

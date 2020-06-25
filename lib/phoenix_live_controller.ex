@@ -721,30 +721,28 @@ defmodule Phoenix.LiveController do
       message = if type == :message, do: name
 
       matching_plugs =
-        Enum.filter(plugs, fn {caller, conditions, _target_mod, _target_fun, _opts} ->
-          if conditions == true do
+        Enum.filter(plugs, fn
+          {_caller, true, _target_mod, _target_fun, _opts} ->
             true
-          else
+
+          {caller, conditions, _target_mod, _target_fun, _opts} ->
             binding = [action: action, event: event, message: message]
             {passed, _} = Code.eval_quoted(conditions, binding, caller)
             passed
-          end
         end)
 
-      if matching_plugs == [] do
-        quote do
-          defp __live_controller_before__(socket, unquote(name), _payload) do
-            socket
-          end
-        end
-      else
-        quote do
-          defp __live_controller_before__(socket, unquote(name), payload) do
-            unquote(build_handler_plug_calls(name, type, matching_plugs))
-          end
+      quote do
+        defp __live_controller_before__(socket, unquote(name), payload) do
+          unquote(build_handler_plug_calls(name, type, matching_plugs))
         end
       end
     end)
+  end
+
+  defp build_handler_plug_calls(_, _, []) do
+    quote do
+      socket
+    end
   end
 
   defp build_handler_plug_calls(name, type, matching_plugs) do
@@ -898,10 +896,8 @@ defmodule Phoenix.LiveController do
     unless message_key,
       do:
         raise("""
-        Message #{inspect(message_payload)} cannot be handled by message handler and #{
-          inspect(module)
-        }
-        doesn't implement handle_info/3 that would handle it instead.
+        Message #{inspect(message_payload)} cannot be handled by message handler and
+        #{inspect(module)} doesn't implement handle_info/3 that would handle it instead.
 
         Make sure that appropriate handle_info/3 function matching this message is defined:
 
