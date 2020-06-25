@@ -683,7 +683,7 @@ defmodule Phoenix.LiveController do
   end
 
   defmacro __before_compile__(env) do
-    build_handler_plugs(env.module) ++
+    build_handler_before(env.module) ++
       [
         quote do
           Module.delete_attribute(__MODULE__, :action_handler)
@@ -707,7 +707,7 @@ defmodule Phoenix.LiveController do
       ]
   end
 
-  defp build_handler_plugs(module) do
+  defp build_handler_before(module) do
     handlers =
       (Module.get_attribute(module, :actions) |> Enum.map(&{&1, :action})) ++
         (Module.get_attribute(module, :events) |> Enum.map(&{&1, :event})) ++
