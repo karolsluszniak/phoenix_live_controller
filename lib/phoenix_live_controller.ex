@@ -752,38 +752,11 @@ defmodule Phoenix.LiveController do
   end
 
   defp build_handler_plug_calls(name, type, matching_plugs) do
-    with_params = type in [:action, :event]
-    with_payload = type == :message
-    action = if type == :action, do: name
-    event = if type == :event, do: name
-    message = if type == :message, do: name
-
     matching_plugs
     |> Enum.map(fn {caller, _conditions, target_mod, target_fun, opts} ->
-      opts = remove_ast_vars_context(opts, [:params, :payload, :action, :event, :message])
-
-      opts_expr =
-        quote do
-          var!(params) = if unquote(with_params), do: payload
-          var!(payload) = if unquote(with_payload), do: payload
-          var!(action) = payload && unquote(action)
-          var!(event) = payload && unquote(event)
-          var!(message) = payload && unquote(message)
-
-          var!(params)
-          var!(payload)
-          var!(action)
-          var!(event)
-          var!(message)
-
-          unquote(opts)
-        end
-
-      opts_expr = Macro.expand(opts_expr, caller)
-
       args =
         if opts,
-          do: quote(do: [socket, unquote(opts_expr)]),
+          do: quote(do: [socket, unquote(build_opts_expression(type, name, opts, caller))]),
           else: quote(do: [socket])
 
       if target_mod,
@@ -801,6 +774,35 @@ defmodule Phoenix.LiveController do
       {name, [], [_socket | rem_args]}, last_socket ->
         {name, [], [last_socket | rem_args]}
     end)
+  end
+
+  defp build_opts_expression(type, name, opts, caller) do
+    with_params = type in [:action, :event]
+    with_payload = type == :message
+    action = if type == :action, do: name
+    event = if type == :event, do: name
+    message = if type == :message, do: name
+
+    opts = remove_ast_vars_context(opts, [:params, :payload, :action, :event, :message])
+
+    opts_expr =
+      quote do
+        var!(params) = if unquote(with_params), do: payload
+        var!(payload) = if unquote(with_payload), do: payload
+        var!(action) = payload && unquote(action)
+        var!(event) = payload && unquote(event)
+        var!(message) = payload && unquote(message)
+
+        var!(params)
+        var!(payload)
+        var!(action)
+        var!(event)
+        var!(message)
+
+        unquote(opts)
+      end
+
+    Macro.expand(opts_expr, caller)
   end
 
   defp remove_ast_vars_context(ast, vars) do
