@@ -5,8 +5,8 @@ defmodule SampleLive do
     @behaviour Phoenix.LiveController.Plug
 
     @impl true
-    def call(socket, {type, name, params}) do
-      assign(socket, :global_plug_called, {type, name, params})
+    def call(socket, {name, payload}) do
+      assign(socket, :global_plug_called, {name, payload})
     end
 
     def other(socket, arg) do
@@ -21,11 +21,11 @@ defmodule SampleLive do
       else: assign(socket, user: session["user"])
   end
 
-  plug BeforeGlobal, {type, name, params}
-  plug {BeforeGlobal, :other}, :arg when type != :message and name != :index_with_opts
+  plug BeforeGlobal, {action || event || message, params || payload}
+  plug {BeforeGlobal, :other}, :arg when action != :index_with_opts and !message
 
-  plug :before_action_handler, %{p: params, key: :before_action_handler_called} when type == :action
-  plug :before_action_handler, %{p: params, key: :before_action_handler_called_two} when type == :action
+  plug :before_action_handler, %{p: params, key: :before_action_handler_called} when action
+  plug :before_action_handler, %{p: params, key: :before_action_handler_called_two} when action
 
   defp before_action_handler(socket, %{p: params, key: key}) do
     history = Map.get(socket.assigns, :plug_history, [])
@@ -35,7 +35,7 @@ defmodule SampleLive do
       else: assign(socket, key, true) |> assign(:plug_history, history ++ [key])
   end
 
-  plug :before_event_handler, params when type == :event
+  plug :before_event_handler, params when event
 
   def before_event_handler(socket, params) do
     if params["redirect"],
@@ -43,10 +43,10 @@ defmodule SampleLive do
       else: assign(socket, before_event_handler_called: true)
   end
 
-  plug :before_message_handler, params when type == :message
+  plug :before_message_handler, payload when message
 
-  def before_message_handler(socket, message) do
-    if message == {:x, :redirect},
+  def before_message_handler(socket, payload) do
+    if payload == {:x, :redirect},
       do: push_redirect(socket, to: "/"),
       else: assign(socket, before_message_handler_called: true)
   end

@@ -140,7 +140,7 @@ defmodule Phoenix.LiveControllerTest do
     assert Map.has_key?(socket.assigns, :before_action_handler_called)
     assert Map.has_key?(socket.assigns, :before_action_handler_called_two)
     assert socket.assigns.plug_history == [:before_action_handler_called, :before_action_handler_called_two]
-    assert socket.assigns.global_plug_called == {:action, :index, %{}}
+    assert socket.assigns.global_plug_called == {:index, %{}}
   end
 
   test "pipelines: before action mount redirected" do
@@ -170,7 +170,7 @@ defmodule Phoenix.LiveControllerTest do
 
     assert {:noreply, socket} = SampleLive.handle_event("create", %{"new_item" => "new"}, socket)
     assert Map.has_key?(socket.assigns, :before_event_handler_called)
-    assert socket.assigns.global_plug_called == {:event, :create, %{"new_item" => "new"}}
+    assert socket.assigns.global_plug_called == {:create, %{"new_item" => "new"}}
   end
 
   test "pipelines: before event handler redirected" do
@@ -202,7 +202,7 @@ defmodule Phoenix.LiveControllerTest do
     assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
     assert socket.assigns[:called]
     assert Map.has_key?(socket.assigns, :before_message_handler_called)
-    assert {:message, :x, :x} == socket.assigns.global_plug_called
+    assert {:x, :x} == socket.assigns.global_plug_called
     refute Map.has_key?(socket.assigns, :other_global_plug_called)
   end
 
