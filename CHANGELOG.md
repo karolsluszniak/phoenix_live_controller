@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+
+### Bug fixes
+
+- Fix error when no handlers defined in live controller
+- Fix duplicate handlers & related warning for handlers with multiple clauses
+
 ## 0.4.1
 
 ### Bug fixes

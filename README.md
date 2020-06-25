@@ -13,7 +13,7 @@ Add `phoenix_live_controller` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_live_controller, "~> 0.4.1"}
+    {:phoenix_live_controller, "~> 0.4.2"}
   ]
 end
 ```

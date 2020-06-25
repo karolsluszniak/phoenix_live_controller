@@ -703,6 +703,9 @@ defmodule Phoenix.LiveController do
                 message,
                 socket
               )
+
+          defp __live_controller_before__(_socket, name, _payload),
+            do: raise("Unknown live controller handler: #{inspect(name)}")
         end
       ]
   end
@@ -815,15 +818,16 @@ defmodule Phoenix.LiveController do
   end
 
   def __on_definition__(env, _kind, name, _args, _guards, _body) do
-    action = Module.delete_attribute(env.module, :action_handler)
-    event = Module.delete_attribute(env.module, :event_handler)
-    message = Module.delete_attribute(env.module, :message_handler)
+    pull_handler_attribute(env.module, :action_handler, :actions, name)
+    pull_handler_attribute(env.module, :event_handler, :events, name)
+    pull_handler_attribute(env.module, :message_handler, :messages, name)
+  end
 
-    cond do
-      action -> Module.put_attribute(env.module, :actions, name)
-      event -> Module.put_attribute(env.module, :events, name)
-      message -> Module.put_attribute(env.module, :messages, name)
-      true -> :ok
+  defp pull_handler_attribute(module, source_attr, target_attr, name) do
+    with true <- Module.delete_attribute(module, source_attr),
+         current_names = Module.get_attribute(module, target_attr),
+         false <- Enum.member?(current_names, name) do
+      Module.put_attribute(module, target_attr, name)
     end
   end
 
