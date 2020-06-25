@@ -541,7 +541,11 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+            ) ::
+              Socket.t()
+              | {:ok, Socket.t()}
+              | {:ok, Socket.t(), keyword()}
+              | {:noreply, Socket.t()}
 
   @doc ~S"""
   Invokes event handler for specific event.
@@ -581,13 +585,19 @@ defmodule Phoenix.LiveController do
     Defines plug module for use with Phoenix live controllers.
     """
 
-    @callback call(
-                socket :: Socket.t()
-              ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+    @callback call(socket :: Socket.t()) ::
+                Socket.t()
+                | {:ok, Socket.t()}
+                | {:ok, Socket.t(), keyword()}
+                | {:noreply, Socket.t()}
     @callback call(
                 socket :: Socket.t(),
                 payload :: any()
-              ) :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}
+              ) ::
+                Socket.t()
+                | {:ok, Socket.t()}
+                | {:ok, Socket.t(), keyword()}
+                | {:noreply, Socket.t()}
 
     @optional_callbacks call: 1, call: 2
   end
@@ -652,25 +662,29 @@ defmodule Phoenix.LiveController do
   end
 
   defmacro __before_compile__(env) do
-    build_handler_plugs(env.module) ++ [quote do
-      Module.delete_attribute(__MODULE__, :action_handler)
-      Module.delete_attribute(__MODULE__, :event_handler)
-      Module.delete_attribute(__MODULE__, :message_handler)
+    build_handler_plugs(env.module) ++
+      [
+        quote do
+          Module.delete_attribute(__MODULE__, :action_handler)
+          Module.delete_attribute(__MODULE__, :event_handler)
+          Module.delete_attribute(__MODULE__, :message_handler)
 
-      @doc false
-      def __live_controller__(:actions), do: @actions
-      def __live_controller__(:events), do: @events
-      def __live_controller__(:messages), do: @messages
+          @doc false
+          def __live_controller__(:actions), do: @actions
+          def __live_controller__(:events), do: @events
+          def __live_controller__(:messages), do: @messages
 
-      def handle_info(message, socket),
-        do: unquote(__MODULE__)._handle_message(__MODULE__, message, socket)
-    end]
+          def handle_info(message, socket),
+            do: unquote(__MODULE__)._handle_message(__MODULE__, message, socket)
+        end
+      ]
   end
 
   defp build_handler_plugs(module) do
-    handlers = (Module.get_attribute(module, :actions) |> Enum.map(&{&1, :action})) ++
-      (Module.get_attribute(module, :events) |> Enum.map(&{&1, :event})) ++
-      (Module.get_attribute(module, :messages) |> Enum.map(&{&1, :message}))
+    handlers =
+      (Module.get_attribute(module, :actions) |> Enum.map(&{&1, :action})) ++
+        (Module.get_attribute(module, :events) |> Enum.map(&{&1, :event})) ++
+        (Module.get_attribute(module, :messages) |> Enum.map(&{&1, :message}))
 
     plugs = Module.get_attribute(module, :plugs)
 
@@ -679,15 +693,16 @@ defmodule Phoenix.LiveController do
       event = if type == :event, do: name
       message = if type == :message, do: name
 
-      matching_plugs = Enum.filter(plugs, fn {caller, conditions, _target_mod, _target_fun, _opts} ->
-        if conditions == true do
-          true
-        else
-          binding = [action: action, event: event, message: message]
-          {passed, _} = Code.eval_quoted(conditions, binding, caller)
-          passed
-        end
-      end)
+      matching_plugs =
+        Enum.filter(plugs, fn {caller, conditions, _target_mod, _target_fun, _opts} ->
+          if conditions == true do
+            true
+          else
+            binding = [action: action, event: event, message: message]
+            {passed, _} = Code.eval_quoted(conditions, binding, caller)
+            passed
+          end
+        end)
 
       if matching_plugs == [] do
         quote do
@@ -714,27 +729,29 @@ defmodule Phoenix.LiveController do
 
     matching_plugs
     |> Enum.map(fn {_caller, _conditions, target_mod, target_fun, opts} ->
-      opts_expr = quote do
-        var!(params) = if unquote(with_params), do: payload
-        var!(payload) = if unquote(with_payload), do: payload
-        var!(action) = payload && unquote(action)
-        var!(event) = payload && unquote(event)
-        var!(message) = payload && unquote(message)
+      opts_expr =
+        quote do
+          var!(params) = if unquote(with_params), do: payload
+          var!(payload) = if unquote(with_payload), do: payload
+          var!(action) = payload && unquote(action)
+          var!(event) = payload && unquote(event)
+          var!(message) = payload && unquote(message)
 
-        var!(params)
-        var!(payload)
-        var!(action)
-        var!(event)
-        var!(message)
+          var!(params)
+          var!(payload)
+          var!(action)
+          var!(event)
+          var!(message)
 
-        unquote(opts)
-      end
+          unquote(opts)
+        end
 
       opts_expr = Macro.expand(opts_expr, __ENV__)
 
-      args = if opts,
-        do: quote(do: [socket, unquote(opts_expr)]),
-        else: quote(do: [socket])
+      args =
+        if opts,
+          do: quote(do: [socket, unquote(opts_expr)]),
+          else: quote(do: [socket])
 
       if target_mod,
         do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
@@ -841,15 +858,22 @@ defmodule Phoenix.LiveController do
   def _handle_message(module, message_payload, socket) do
     message_key =
       cond do
-        is_atom(message_payload) -> message_payload
-        is_tuple(message_payload) and is_atom(elem(message_payload, 0)) -> elem(message_payload, 0)
-        true -> nil
+        is_atom(message_payload) ->
+          message_payload
+
+        is_tuple(message_payload) and is_atom(elem(message_payload, 0)) ->
+          elem(message_payload, 0)
+
+        true ->
+          nil
       end
 
     unless message_key,
       do:
         raise("""
-        Message #{inspect(message_payload)} cannot be handled by message handler and #{inspect(module)}
+        Message #{inspect(message_payload)} cannot be handled by message handler and #{
+          inspect(module)
+        }
         doesn't implement handle_info/3 that would handle it instead.
 
         Make sure that appropriate handle_info/3 function matching this message is defined:
@@ -890,7 +914,11 @@ defmodule Phoenix.LiveController do
   Read more about the role that this function plays in the live controller pipeline in docs for
   `Phoenix.LiveController`.
   """
-  @spec chain(socket :: Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()}, func :: function) :: Socket.t()
+  @spec chain(
+          socket ::
+            Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()},
+          func :: function
+        ) :: Socket.t()
   def chain(socket = %{redirected: nil}, func), do: func.(socket)
   def chain(halted_socket, _func), do: halted_socket
 
@@ -914,19 +942,21 @@ defmodule Phoenix.LiveController do
   `Phoenix.LiveController`.
   """
   defmacro plug(target, opts \\ nil) do
-    {target, opts, conditions} = if opts do
-      {opts, conditions} = extract_when(opts)
-      {target, opts, conditions}
-    else
-      {target, conditions} = extract_when(target)
-      {target, nil, conditions}
-    end
+    {target, opts, conditions} =
+      if opts do
+        {opts, conditions} = extract_when(opts)
+        {target, opts, conditions}
+      else
+        {target, conditions} = extract_when(target)
+        {target, nil, conditions}
+      end
 
-    {target_mod, target_fun} = case target do
-      atom when is_atom(atom) -> {nil, atom}
-      ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call}
-      {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
-    end
+    {target_mod, target_fun} =
+      case target do
+        atom when is_atom(atom) -> {nil, atom}
+        ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call}
+        {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun}
+      end
 
     plug = {__CALLER__, conditions, target_mod, target_fun, opts}
 

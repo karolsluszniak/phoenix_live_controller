@@ -139,7 +139,12 @@ defmodule Phoenix.LiveControllerTest do
     assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert Map.has_key?(socket.assigns, :before_action_handler_called)
     assert Map.has_key?(socket.assigns, :before_action_handler_called_two)
-    assert socket.assigns.plug_history == [:before_action_handler_called, :before_action_handler_called_two]
+
+    assert socket.assigns.plug_history == [
+             :before_action_handler_called,
+             :before_action_handler_called_two
+           ]
+
     assert socket.assigns.global_plug_called == {:index, %{}}
   end
 
