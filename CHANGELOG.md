@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0
+
+### Enhancements
+
+- Allow to define plugs with "function call" syntax & arbitrary args for extra flexibility
+- Evaluate plug `when` conditions in runtime for extra flexibility
+- Add plug performance benchmark
+
+### Backwards incompatible changes
+
+- When defining plugs, `message` variable now includes an entire message payload and not just the
+  label (which is now available in the `name` variable)
+- `plug/2` variant with options as second argument is removed in favor of a more flexible (and less
+  confusing when mixed with `when`) function call syntax
+
 ## 0.4.2
 
 ### Bug fixes
