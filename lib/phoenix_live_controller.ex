@@ -551,38 +551,6 @@ defmodule Phoenix.LiveController do
                       event_handler: 3,
                       message_handler: 3
 
-  defmodule Plug do
-    @moduledoc """
-    Defines plug module for use with Phoenix live controllers.
-    """
-
-    @callback call(socket :: Socket.t()) ::
-                Socket.t()
-                | {:ok, Socket.t()}
-                | {:ok, Socket.t(), keyword()}
-                | {:noreply, Socket.t()}
-  end
-
-  defmodule ControllerState do
-    @moduledoc """
-    Embeds extra state in socket to facilitate Phoenix live controllers.
-    """
-
-    @type t() :: %__MODULE__{
-            mounted?: boolean(),
-            session: map(),
-            url: String.t()
-          }
-
-    @derive {Inspect, except: [:session, :url]}
-
-    @enforce_keys [:mounted?, :session]
-
-    defstruct mounted?: false,
-              session: %{},
-              url: nil
-  end
-
   defmacro __using__(opts) do
     view_module =
       __CALLER__.module
@@ -610,7 +578,7 @@ defmodule Phoenix.LiveController do
 
       def mount(params, session, socket),
         do:
-          unquote(__MODULE__)._mount(
+          Phoenix.LiveController.LiveViewCallbacks.mount(
             __MODULE__,
             &__live_controller_before__(&1, :action, &2, &3),
             params,
@@ -620,7 +588,7 @@ defmodule Phoenix.LiveController do
 
       def handle_params(params, url, socket),
         do:
-          unquote(__MODULE__)._handle_params(
+          Phoenix.LiveController.LiveViewCallbacks.handle_params(
             __MODULE__,
             &__live_controller_before__(&1, :action, &2, &3),
             params,
@@ -630,7 +598,7 @@ defmodule Phoenix.LiveController do
 
       def handle_event(event_string, params, socket),
         do:
-          unquote(__MODULE__)._handle_event(
+          Phoenix.LiveController.LiveViewCallbacks.handle_event(
             __MODULE__,
             &__live_controller_before__(&1, :event, &2, &3),
             event_string,
@@ -670,122 +638,19 @@ defmodule Phoenix.LiveController do
       def __live_controller__(:events), do: @events
       def __live_controller__(:messages), do: @messages
 
+      # Catch-all inserted late in order to allow misc clauses to match before it
+
       def handle_info(message, socket),
         do:
-          unquote(__MODULE__)._handle_message(
+          Phoenix.LiveController.LiveViewCallbacks.handle_message(
             __MODULE__,
             &__live_controller_before__(&1, :message, &2, &3),
             message,
             socket
           )
 
-      unquote(build_before(env.module))
+      unquote(Phoenix.LiveController.PlugChain.build_before(env.module))
     end
-  end
-
-  defp build_before(module) do
-    plugs = Module.get_attribute(module, :plugs)
-
-    quote do
-      defp __live_controller_before__(socket, type, name, payload) do
-        unquote(build_plug_calls(plugs))
-      end
-    end
-  end
-
-  defp build_plug_calls([]) do
-    quote(do: socket)
-  end
-
-  defp build_plug_calls(plugs) do
-    plug_calls =
-      plugs
-      |> Enum.map(&build_plug_call/1)
-      |> chain_calls()
-
-    quote do
-      unquote(expose_plug_global_vars())
-      unquote(plug_calls)
-    end
-  end
-
-  defp build_plug_call({caller, args, conditions, target_mod, target_fun}) do
-    call =
-      if args do
-        args = Enum.map(args, &prepare_plug_expression(&1, caller))
-        quote(do: unquote(target_fun)(unquote_splicing(args)))
-      else
-        args = quote(do: [socket])
-
-        if target_mod,
-          do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
-          else: quote(do: unquote(target_fun)(unquote_splicing(args)))
-      end
-
-    quote do
-      chain(socket, fn socket ->
-        unquote(expose_plug_local_vars())
-
-        if unquote(prepare_plug_expression(conditions, caller)) do
-          unquote(call)
-        else
-          socket
-        end
-      end)
-    end
-  end
-
-  defp chain_calls(calls) do
-    calls
-    |> Enum.reverse()
-    |> Enum.reduce(fn
-      {name, [], [_socket | rem_args]}, last_socket ->
-        {name, [], [last_socket | rem_args]}
-    end)
-  end
-
-  defp expose_plug_local_vars do
-    quote do
-      var!(socket) = socket
-
-      var!(socket)
-    end
-  end
-
-  defp expose_plug_global_vars do
-    quote do
-      var!(name) = name
-      var!(action) = if type == :action, do: name
-      var!(event) = if type == :event, do: name
-      var!(params) = if type in [:action, :event], do: payload
-      var!(message) = if type == :message, do: payload
-
-      var!(name)
-      var!(params)
-      var!(message)
-      var!(action)
-      var!(event)
-    end
-  end
-
-  defp prepare_plug_expression(expr, caller) do
-    expr
-    |> remove_vars_context([:params, :payload, :action, :event, :message, :socket])
-    |> Macro.expand(caller)
-  end
-
-  defp remove_vars_context(ast, vars) do
-    ast
-    |> Macro.prewalk(nil, fn
-      node = {var, meta, _}, nil ->
-        if var in vars,
-          do: {{var, Keyword.delete(meta, :counter), nil}, nil},
-          else: {node, nil}
-
-      node, nil ->
-        {node, nil}
-    end)
-    |> elem(0)
   end
 
   def __on_definition__(env, _kind, name, _args, _guards, _body) do
@@ -802,143 +667,32 @@ defmodule Phoenix.LiveController do
     end
   end
 
-  def _mount(module, before_callback, params, session, socket) do
-    action =
-      socket.assigns[:live_action] ||
-        raise """
-        #{inspect(module)} called without action.
+  @doc """
+  Define a callback that acts on a socket before action, event or essage handler.
 
-        Make sure to mount it via route that specifies action, e.g. for :index action:
+  Read more about the role that this macro plays in the live controller pipeline in docs for
+  `Phoenix.LiveController`.
+  """
+  defmacro plug(target) do
+    {target, conditions} = extract_when(target)
 
-            live "/some_url", #{inspect(module)}, :index
+    {target_mod, target_fun, args} =
+      case target do
+        atom when is_atom(atom) -> {nil, atom, nil}
+        ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call, nil}
+        {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun, nil}
+        {fun, _meta, args} -> {nil, fun, args}
+      end
 
-        """
+    plug = {__CALLER__, args, conditions, target_mod, target_fun}
 
-    unless Enum.member?(module.__live_controller__(:actions), action),
-      do:
-        raise("""
-        #{inspect(module)} doesn't implement action handler for #{inspect(action)} action.
-
-        Make sure that #{action} function is defined and annotated as action handler:
-
-            @action_handler true
-            def #{action}(socket, params) do
-              # ...
-            end
-
-        """)
-
-    socket
-    |> initialize_controller_state(session)
-    |> before_callback.(action, params)
-    |> chain(&module.action_handler(&1, action, params))
-    |> wrap_socket(&{:ok, &1})
-  end
-
-  defp initialize_controller_state(%{controller: _}, _) do
-    raise("""
-    Phoenix.LiveView.Socket struct already includes the :controller key.
-
-    This means that you're using Phoenix.LiveView version incompatible with Phoenix.LiveController
-    and that Phoenix.LiveController needs to be updated.
-    """)
-  end
-
-  defp initialize_controller_state(socket, session) do
-    Map.put_new(socket, :controller, %ControllerState{mounted?: false, session: session})
-  end
-
-  def _handle_params(module, before_callback, params, url, socket) do
-    action = socket.assigns.live_action
-
-    unless mounted?(socket) do
-      socket
-      |> update_controller_state(mounted?: true, url: url)
-      |> wrap_socket(&{:noreply, &1})
-    else
-      socket
-      |> before_callback.(action, params)
-      |> chain(&module.action_handler(&1, action, params))
-      |> wrap_socket(&{:noreply, &1})
+    quote do
+      @plugs unquote(Macro.escape(plug))
     end
   end
 
-  defp update_controller_state(socket, changes) do
-    Map.put(socket, :controller, Map.merge(socket.controller, Map.new(changes)))
-  end
-
-  def _handle_event(module, before_callback, event_string, params, socket) do
-    unless Enum.any?(module.__live_controller__(:events), &(to_string(&1) == event_string)),
-      do:
-        raise("""
-        #{inspect(module)} doesn't implement event handler for #{inspect(event_string)} event.
-
-        Make sure that #{event_string} function is defined and annotated as event handler:
-
-            @event_handler true
-            def #{event_string}(socket, params) do
-              # ...
-            end
-
-        """)
-
-    event = String.to_atom(event_string)
-
-    socket
-    |> before_callback.(event, params)
-    |> chain(&module.event_handler(&1, event, params))
-    |> wrap_socket(&{:noreply, &1})
-  end
-
-  def _handle_message(module, before_callback, message_payload, socket) do
-    message_key =
-      cond do
-        is_atom(message_payload) ->
-          message_payload
-
-        is_tuple(message_payload) and is_atom(elem(message_payload, 0)) ->
-          elem(message_payload, 0)
-
-        true ->
-          nil
-      end
-
-    unless message_key,
-      do:
-        raise("""
-        Message #{inspect(message_payload)} cannot be handled by message handler and
-        #{inspect(module)} doesn't implement handle_info/3 that would handle it instead.
-
-        Make sure that appropriate handle_info/3 function matching this message is defined:
-
-            def handle_info(message, socket) do
-              # ...
-            end
-
-        """)
-
-    unless Enum.member?(module.__live_controller__(:messages), message_key),
-      do:
-        raise("""
-        #{inspect(module)} doesn't implement message handler for #{inspect(message_payload)} message.
-
-        Make sure that #{message_key} function is defined and annotated as message handler:
-
-            @message_handler true
-            def #{message_key}(socket, message) do
-              # ...
-            end
-
-        """)
-
-    socket
-    |> before_callback.(message_key, message_payload)
-    |> chain(&module.message_handler(&1, message_key, message_payload))
-    |> wrap_socket(&{:noreply, &1})
-  end
-
-  defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
-  defp wrap_socket(misc, _wrapper), do: misc
+  defp extract_when({:when, _, [left, when_conditions]}), do: {left, when_conditions}
+  defp extract_when(other), do: {other, true}
 
   @doc ~S"""
   Calls given function if socket wasn't redirected, passes the socket through otherwise.
@@ -992,31 +746,4 @@ defmodule Phoenix.LiveController do
   """
   @spec get_session(socket :: Socket.t(), String.t() | atom()) :: any()
   def get_session(socket, key), do: get_session(socket) |> Map.get(to_string(key))
-
-  @doc """
-  Define a callback that acts on a socket before action, event or essage handler.
-
-  Read more about the role that this macro plays in the live controller pipeline in docs for
-  `Phoenix.LiveController`.
-  """
-  defmacro plug(target) do
-    {target, conditions} = extract_when(target)
-
-    {target_mod, target_fun, args} =
-      case target do
-        atom when is_atom(atom) -> {nil, atom, nil}
-        ast = {:__aliases__, _meta, _parts} -> {Macro.expand(ast, __CALLER__), :call, nil}
-        {ast = {:__aliases__, _meta, _parts}, fun} -> {Macro.expand(ast, __CALLER__), fun, nil}
-        {fun, _meta, args} -> {nil, fun, args}
-      end
-
-    plug = {__CALLER__, args, conditions, target_mod, target_fun}
-
-    quote do
-      @plugs unquote(Macro.escape(plug))
-    end
-  end
-
-  defp extract_when({:when, _, [left, when_conditions]}), do: {left, when_conditions}
-  defp extract_when(other), do: {other, true}
 end
