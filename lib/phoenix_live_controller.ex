@@ -256,29 +256,6 @@ defmodule Phoenix.LiveController do
   Note that, consistently with action & event handlers, message handlers don't have to wrap the
   resulting socket in the `{:noreply, socket}` tuple.
 
-  ## Applying session
-
-  Session, previously passed to `c:Phoenix.LiveView.mount/3`, is not passed through to action
-  handlers. Instead, an optional `c:apply_session/2` callback may be defined in order to read the
-  session and modify socket before an actual action handler is called.
-
-      defmodule MyAppWeb.ArticleLive do
-        use MyAppWeb, :live_controller
-
-        @impl true
-        def apply_session(socket, session) do
-          user_token = session["user_token"]
-          user = user_token && Accounts.get_user_by_session_token(user_token)
-
-          assign(socket, current_user: user)
-        end
-
-        # ...
-      end
-
-  Note that, in a fashion similar to controller plugs, no further action handling logic will be
-  called if the returned socket was redirected - more on that below.
-
   ## Updating params without redirect
 
   For live views that [implement parameter
@@ -324,6 +301,10 @@ defmodule Phoenix.LiveController do
           assign(socket, articles: articles)
         end
       end
+
+  When called after being mounted, action handler may also access the current live URL via the
+  `get_current_url/1` helper function. This is however not possible during the mounting (more on
+  that in docs for `get_current_url/1`).
 
   Note that an action handler will only be called once when mounting, even though native LiveView
   calls both `mount/3` and `handle_params/3` at that moment.
@@ -423,7 +404,7 @@ defmodule Phoenix.LiveController do
   >
   > ```
   > plug fetch_article(socket, params) when not mounted?(socket)
-  > plug start_counter(socket) when not mounted?(socket) and connected?(socket)
+  > plug start_counter(socket) when connected?(socket) and not mounted?(socket)
   > ```
 
   If multiple plugs are defined, they'll be called in a chain. If any of them redirects the socket
@@ -454,6 +435,32 @@ defmodule Phoenix.LiveController do
   plug in Phoenix controllers - complete the pipeline by calling functions named after specific
   actions, events or messages.
 
+  ## Applying session
+
+  Session, previously passed to `c:Phoenix.LiveView.mount/3`, may now be accessed via the
+  `get_session/1` and `get_session/2` helpers in plugs and handlers.
+
+      defmodule MyAppWeb.LiveUserAuth do
+        def fetch_current_user(socket) do
+          user_token = get_session[socket, :user_token)
+          user = user_token && Accounts.get_user_by_session_token(user_token)
+
+          assign(socket, current_user: user)
+        end
+      end
+
+  Combined with plugs, this allows to easily implement app-wide session handlers.
+
+      defmodule MyAppWeb do
+        def live_controller do
+          quote do
+            use Phoenix.LiveController
+            # ...
+            plug {MyAppWeb.LiveUserAuth, :fetch_current_user}
+          end
+        end
+      end
+
   ## Specifying LiveView options
 
   Any options that were previously passed to `use Phoenix.LiveView`, such as `:layout` or
@@ -477,17 +484,6 @@ defmodule Phoenix.LiveController do
   """
 
   alias Phoenix.LiveView.Socket
-
-  @doc ~S"""
-  Allows to read the session and modify socket before an actual action handler is called.
-
-  Read more about how to apply the session and the consequences of returning redirected socket from
-  this callback in docs for `Phoenix.LiveController`.
-  """
-  @callback apply_session(
-              socket :: Socket.t(),
-              session :: map
-            ) :: Socket.t()
 
   @doc ~S"""
   Invokes action handler for specific action.
@@ -551,8 +547,7 @@ defmodule Phoenix.LiveController do
               message :: any
             ) :: Socket.t() | {:noreply, Socket.t()}
 
-  @optional_callbacks apply_session: 2,
-                      action_handler: 3,
+  @optional_callbacks action_handler: 3,
                       event_handler: 3,
                       message_handler: 3
 
@@ -566,6 +561,26 @@ defmodule Phoenix.LiveController do
                 | {:ok, Socket.t()}
                 | {:ok, Socket.t(), keyword()}
                 | {:noreply, Socket.t()}
+  end
+
+  defmodule ControllerState do
+    @moduledoc """
+    Embeds extra state in socket to facilitate Phoenix live controllers.
+    """
+
+    @type t() :: %__MODULE__{
+            mounted?: boolean(),
+            session: map(),
+            url: String.t()
+          }
+
+    @derive {Inspect, except: [:session, :url]}
+
+    @enforce_keys [:mounted?, :session]
+
+    defstruct mounted?: false,
+              session: %{},
+              url: nil
   end
 
   defmacro __using__(opts) do
@@ -628,9 +643,6 @@ defmodule Phoenix.LiveController do
 
       # Default implementations of Phoenix.LiveController callbacks
 
-      def apply_session(socket, _session),
-        do: socket
-
       def action_handler(socket, name, params),
         do: apply(__MODULE__, name, [socket, params])
 
@@ -640,8 +652,7 @@ defmodule Phoenix.LiveController do
       def message_handler(socket, name, message),
         do: apply(__MODULE__, name, [socket, message])
 
-      defoverridable apply_session: 2,
-                     action_handler: 3,
+      defoverridable action_handler: 3,
                      event_handler: 3,
                      message_handler: 3,
                      render: 1
@@ -818,19 +829,31 @@ defmodule Phoenix.LiveController do
         """)
 
     socket
-    |> Map.put_new(:mounted?, false)
-    |> module.apply_session(session)
+    |> initialize_controller_state(session)
     |> before_callback.(action, params)
     |> chain(&module.action_handler(&1, action, params))
     |> wrap_socket(&{:ok, &1})
   end
 
-  def _handle_params(module, before_callback, params, _url, socket) do
+  defp initialize_controller_state(%{controller: _}, _) do
+    raise("""
+    Phoenix.LiveView.Socket struct already includes the :controller key.
+
+    This means that you're using Phoenix.LiveView version incompatible with Phoenix.LiveController
+    and that Phoenix.LiveController needs to be updated.
+    """)
+  end
+
+  defp initialize_controller_state(socket, session) do
+    Map.put_new(socket, :controller, %ControllerState{mounted?: false, session: session})
+  end
+
+  def _handle_params(module, before_callback, params, url, socket) do
     action = socket.assigns.live_action
 
-    unless Map.get(socket, :mounted?) do
+    unless mounted?(socket) do
       socket
-      |> Map.put(:mounted?, true)
+      |> update_controller_state(mounted?: true, url: url)
       |> wrap_socket(&{:noreply, &1})
     else
       socket
@@ -838,6 +861,10 @@ defmodule Phoenix.LiveController do
       |> chain(&module.action_handler(&1, action, params))
       |> wrap_socket(&{:noreply, &1})
     end
+  end
+
+  defp update_controller_state(socket, changes) do
+    Map.put(socket, :controller, Map.merge(socket.controller, Map.new(changes)))
   end
 
   def _handle_event(module, before_callback, event_string, params, socket) do
@@ -910,6 +937,9 @@ defmodule Phoenix.LiveController do
     |> wrap_socket(&{:noreply, &1})
   end
 
+  defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
+  defp wrap_socket(misc, _wrapper), do: misc
+
   @doc ~S"""
   Calls given function if socket wasn't redirected, passes the socket through otherwise.
 
@@ -931,11 +961,37 @@ defmodule Phoenix.LiveController do
   `Phoenix.LiveController`.
   """
   @spec mounted?(socket :: Socket.t()) :: boolean()
-  def mounted?(_socket = %{mounted?: true}), do: true
-  def mounted?(_socket), do: false
+  def mounted?(%{__struct__: Socket, controller: %ControllerState{mounted?: mounted}}),
+    do: mounted
 
-  defp wrap_socket(socket = %Phoenix.LiveView.Socket{}, wrapper), do: wrapper.(socket)
-  defp wrap_socket(misc, _wrapper), do: misc
+  @doc ~S"""
+  Returns the mounted live controller's URL with query params.
+
+  Note that for every first execution of action handler (i.e. for when `mounted?(socket)` returns
+  false) the returned URL will be nil. This is because the action handler first runs before the live
+  view passes the URL to the `c:Phoenix.LiveView.handle_params/3` (in order to get a chance to
+  return extra options such as `temporary_assigns`).
+  """
+  @spec get_current_url(socket :: Socket.t()) :: String.t() | nil
+  def get_current_url(%{__struct__: Socket, controller: %ControllerState{url: url}}), do: url
+
+  @doc ~S"""
+  Returns the whole session.
+
+  Although `get_session/2` allows atom keys, they are always normalized to strings. So this function
+  always returns a map with string keys.
+  """
+  @spec get_session(socket :: Socket.t()) :: map
+  def get_session(%{__struct__: Socket, controller: %ControllerState{session: session}}),
+    do: session
+
+  @doc ~S"""
+  Returns session value for the given key. If key is not set, nil is returned.
+
+  The key can be a string or an atom, where atoms are automatically converted to strings.
+  """
+  @spec get_session(socket :: Socket.t(), String.t() | atom()) :: any()
+  def get_session(socket, key), do: get_session(socket) |> Map.get(to_string(key))
 
   @doc """
   Define a callback that acts on a socket before action, event or essage handler.

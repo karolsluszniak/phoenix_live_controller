@@ -307,4 +307,41 @@ defmodule Phoenix.LiveControllerTest do
     assert {:rendered, "index.html", %{live_action: :index, other: :x}} =
              SampleLive.render(socket.assigns)
   end
+
+  test "get_current_url/1" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
+    assert Phoenix.LiveController.get_current_url(socket) == nil
+
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "http://x.y/z?a=1", socket)
+    assert Phoenix.LiveController.get_current_url(socket) == "http://x.y/z?a=1"
+  end
+
+  test "get_session/1" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{"x" => "y"}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
+
+    assert Phoenix.LiveController.get_session(socket) == %{"x" => "y"}
+  end
+
+  test "get_session/2" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{"x" => "y"}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
+
+    assert Phoenix.LiveController.get_session(socket, "x") == "y"
+    assert Phoenix.LiveController.get_session(socket, :x) == "y"
+    assert Phoenix.LiveController.get_session(socket, "a") == nil
+    assert Phoenix.LiveController.get_session(socket, :a) == nil
+  end
 end
