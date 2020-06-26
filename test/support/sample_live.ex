@@ -30,11 +30,14 @@ defmodule SampleLive do
     end
   end
 
-  @impl true
-  def apply_session(socket, session) do
-    if session["user"] == "badguy",
+  plug fetch_user(socket) when action && !mounted?(socket)
+
+  defp fetch_user(socket) do
+    user = get_session(socket, :user)
+
+    if user == "badguy",
       do: push_redirect(socket, to: "/"),
-      else: assign(socket, user: session["user"])
+      else: assign(socket, user: user)
   end
 
   plug BeforeGlobal.call(socket, {name, params || message})

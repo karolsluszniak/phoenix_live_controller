@@ -1,17 +1,20 @@
 # Changelog
 
-## 0.5.0
+## 0.5.0-dev
 
 ### Enhancements
 
 - Allow to define plugs with "function call" syntax & arbitrary args for extra flexibility
 - Evaluate plug `when` conditions in runtime for extra flexibility
+- Introduce new `name` plug variable for accessing handler name for all handler types
+- Introduce `get_current_url/1` for accessing the current live URL after the socket is mounted
+- Introduce `get_session/1` and `get_session/2` for accessing the session
 - Add plug performance benchmark
 
 ### Backwards incompatible changes
 
-- When defining plugs, `message` variable now includes an entire message payload and not just the
-  label (which is now available in the `name` variable)
+- Remove the `apply_session` callback in favor of plugs and `get_session` helpers
+- Change the plug `message` variable to include an entire message payload and not just the label
 - `plug/2` variant with options as second argument is removed in favor of a more flexible (and less
   confusing when mixed with `when`) function call syntax
 
