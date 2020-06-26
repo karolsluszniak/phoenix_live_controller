@@ -699,7 +699,7 @@ defmodule Phoenix.LiveController do
     plugs
     |> Enum.map(fn {caller, args, conditions, target_mod, target_fun} ->
       call = if args do
-        args = Enum.map(args, &build_plug_expression(&1, caller, type, name))
+        args = Enum.map(args, &prepare_plug_expression_ast(&1, caller))
         quote(do: unquote(target_fun)(unquote_splicing(args)))
       else
         args = quote(do: [socket])
@@ -710,7 +710,9 @@ defmodule Phoenix.LiveController do
 
       quote do
         chain(socket, fn socket ->
-          if unquote(build_plug_expression(conditions, caller, type, name)) do
+          unquote(build_plug_ast_vars(type, name))
+
+          if unquote(prepare_plug_expression_ast(conditions, caller)) do
             unquote(call)
           else
             socket
@@ -728,36 +730,35 @@ defmodule Phoenix.LiveController do
     end)
   end
 
-  defp build_plug_expression(ast, caller, type, name) do
+  defp build_plug_ast_vars(type, name) do
     with_params = type in [:action, :event]
     with_payload = type == :message
     action = if type == :action, do: name
     event = if type == :event, do: name
     message = if type == :message, do: name
 
-    ast = remove_ast_vars_context(ast, [:params, :payload, :action, :event, :message, :socket])
+    quote do
+      var!(socket) = socket
 
-    ast_wrapped =
-      quote do
-        var!(socket) = socket
+      var!(params) = if unquote(with_params), do: payload
+      var!(payload) = if unquote(with_payload), do: payload
+      var!(action) = payload && unquote(action)
+      var!(event) = payload && unquote(event)
+      var!(message) = payload && unquote(message)
 
-        var!(params) = if unquote(with_params), do: payload
-        var!(payload) = if unquote(with_payload), do: payload
-        var!(action) = payload && unquote(action)
-        var!(event) = payload && unquote(event)
-        var!(message) = payload && unquote(message)
+      var!(socket)
+      var!(params)
+      var!(payload)
+      var!(action)
+      var!(event)
+      var!(message)
+    end
+  end
 
-        var!(socket)
-        var!(params)
-        var!(payload)
-        var!(action)
-        var!(event)
-        var!(message)
-
-        unquote(ast)
-      end
-
-    Macro.expand(ast_wrapped, caller)
+  defp prepare_plug_expression_ast(ast, caller) do
+    ast
+    |> remove_ast_vars_context([:params, :payload, :action, :event, :message, :socket])
+    |> Macro.expand(caller)
   end
 
   defp remove_ast_vars_context(ast, vars) do
