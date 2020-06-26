@@ -8,16 +8,31 @@ defmodule SomeLiveBench do
   end
 
   defp run_file(name, mod) do
-    socket =
-      %Phoenix.LiveView.Socket{}
-      |> assign(live_action: :index)
-
     time("#{name} compile", fn ->
       Code.compile_file("priv/bench/sample_#{name}_live.ex")
     end)
 
     time("#{name} run", fn ->
-      for _ <- 1..5000, do: mod.mount(%{}, %{}, socket)
+      for _ <- 1..5000 do
+        socket =
+          %Phoenix.LiveView.Socket{}
+          |> assign(live_action: :index)
+
+        mod.mount(%{}, %{}, socket)
+
+        socket = assign(socket, live_action: :show)
+        mod.mount(%{}, %{}, socket)
+
+        socket = assign(socket, live_action: :new)
+        {:ok, socket} = mod.mount(%{}, %{}, socket)
+        {:noreply, _socket} = mod.handle_event("create", %{}, socket)
+
+        socket = assign(socket, live_action: :edit)
+        {:ok, socket} = mod.mount(%{}, %{}, socket)
+        {:noreply, _socket} = mod.handle_event("update", %{}, socket)
+
+        {:noreply, _socket} = mod.handle_event("delete", %{}, socket)
+      end
     end)
   end
 
