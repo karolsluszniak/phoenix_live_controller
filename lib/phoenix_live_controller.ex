@@ -194,8 +194,10 @@ defmodule Phoenix.LiveController do
   *Message handlers* offer an alternative (but not a replacement) to
   `c:Phoenix.LiveView.handle_info/2` for handling process messages in a fashion consistent with
   action and event handlers. These functions are annotated with `@message_handler true` and their
-  name equals to a message atom (e.g. `:refresh_article`) or to an atom placed as first element in a
-  message tuple (e.g. `{:article_update, ...}`).
+  name equals to a "label" atom extracted from the supported message payload:
+
+  - for atom payloads: that atom (e.g. `:refresh_article`)
+  - for tuple payloads: an atom placed as first element in a tuple (e.g. `{:article_update, ...}`)
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
@@ -364,7 +366,7 @@ defmodule Phoenix.LiveController do
   > **Note**: `Phoenix.LiveController.Plug` behaviour is available for defining module plugs that
   > are expected to expose a single `call(socket)` plug function (second case above).
 
-  It's possible to scope given plug to only a subset of handlers with the `when` condition:
+  It's possible to scope given plug to only a subset of handlers with the `when` condition.
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
@@ -372,15 +374,16 @@ defmodule Phoenix.LiveController do
         plug :require_authenticated_user when action not in [:index, :show]
       end
 
-  Following variables may be referenced when specifying arbitrary arguments or the `when`
-  condition:
+  Following variables may be referenced when specifying arbitrary args or the `when` condition:
 
-  * `action` / `event` / `message` - action, event or message handler name (atom or `nil`)
   * `socket` - current LiveView socket (`Phoenix.LiveView.Socket` struct)
+  * `name` - handler name (atom)
+  * `action` - action handler name (atom or `nil`)
+  * `event` - event handler name (atom or `nil`)
   * `params` - action or event params (map or `nil`)
-  * `payload` - message payload (message supported by message handler or `nil`)
+  * `message` - message payload (atom/tuple or `nil`)
 
-  All plug forms may be freely mixed with the `when` conditions:
+  All plug forms may be freely mixed with the `when` conditions.
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
@@ -414,12 +417,13 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  > **Pro tip**: Condition in `when` is not a guard, therefore it's possible to call any function
-  > within it. That makes it easy for example to only call a plug upon mounting and not when
-  > params are getting patched:
+  > **Pro tip**: Condition in `when` is not really a guard and it's evaluated in runtime, therefore
+  > it's possible to call any function within it. This makes it easy, for example, to only call a
+  > plug upon mounting and/or only when socket is connected:
   >
   > ```
   > plug fetch_article(socket, params) when not mounted?(socket)
+  > plug start_counter(socket) when not mounted?(socket) and connected?(socket)
   > ```
 
   If multiple plugs are defined, they'll be called in a chain. If any of them redirects the socket
@@ -695,19 +699,22 @@ defmodule Phoenix.LiveController do
   end
 
   defp build_plug_call({caller, args, conditions, target_mod, target_fun}) do
-    call = if args do
-      args = Enum.map(args, &prepare_plug_expression(&1, caller))
-      quote(do: unquote(target_fun)(unquote_splicing(args)))
-    else
-      args = quote(do: [socket])
-      if target_mod,
-        do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
-        else: quote(do: unquote(target_fun)(unquote_splicing(args)))
-    end
+    call =
+      if args do
+        args = Enum.map(args, &prepare_plug_expression(&1, caller))
+        quote(do: unquote(target_fun)(unquote_splicing(args)))
+      else
+        args = quote(do: [socket])
+
+        if target_mod,
+          do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+          else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+      end
 
     quote do
       chain(socket, fn socket ->
         unquote(expose_plug_local_vars())
+
         if unquote(prepare_plug_expression(conditions, caller)) do
           unquote(call)
         else
@@ -736,17 +743,17 @@ defmodule Phoenix.LiveController do
 
   defp expose_plug_global_vars do
     quote do
-      var!(params) = if type in [:action, :event], do: payload
-      var!(payload) = if type == :message, do: payload
+      var!(name) = name
       var!(action) = if type == :action, do: name
       var!(event) = if type == :event, do: name
-      var!(message) = if type == :message, do: name
+      var!(params) = if type in [:action, :event], do: payload
+      var!(message) = if type == :message, do: payload
 
+      var!(name)
       var!(params)
-      var!(payload)
+      var!(message)
       var!(action)
       var!(event)
-      var!(message)
     end
   end
 

@@ -37,13 +37,15 @@ defmodule SampleLive do
       else: assign(socket, user: session["user"])
   end
 
-  plug BeforeGlobal.call(socket, {action || event || message, params || payload})
+  plug BeforeGlobal.call(socket, {name, params || message})
   plug NestedPlug
 
   @skip_action :index_with_opts
   plug BeforeGlobal.other(socket, :arg) when action != @skip_action and !message
 
-  plug on_final_mount(socket) when action && connected?(socket) && !mounted?(socket)
+  plug on_final_mount(socket)
+       when action && connected?(socket) && !mounted?(socket) && local_check?(socket)
+
   defp on_final_mount(socket) do
     if Map.get(socket.assigns, :final_mount_done) do
       raise "mounting twice?"
@@ -52,7 +54,12 @@ defmodule SampleLive do
     end
   end
 
+  defp local_check?(_socket) do
+    true
+  end
+
   plug :on_final_mount_atom when action && connected?(socket) && !mounted?(socket)
+
   defp on_final_mount_atom(socket) do
     if Map.get(socket.assigns, :final_mount_done_2) do
       raise "mounting twice?"
@@ -62,7 +69,10 @@ defmodule SampleLive do
   end
 
   plug before_action_handler(socket, %{p: params, key: :before_action_handler_called}) when action
-  plug before_action_handler(socket, %{p: params, key: :before_action_handler_called_two}) when action
+
+  plug before_action_handler(socket, %{p: params, key: :before_action_handler_called_two})
+       when action
+
   defp before_action_handler(socket, %{p: params, key: key}) do
     history = Map.get(socket.assigns, :plug_history, [])
 
@@ -72,15 +82,17 @@ defmodule SampleLive do
   end
 
   plug before_event_handler(socket, params) when event
+
   def before_event_handler(socket, params) do
     if params["redirect"],
       do: push_redirect(socket, to: "/"),
       else: assign(socket, before_event_handler_called: true)
   end
 
-  plug before_message_handler(socket, payload) when message
-  def before_message_handler(socket, payload) do
-    if payload == {:x, :redirect},
+  plug before_message_handler(socket, message) when message
+
+  def before_message_handler(socket, message) do
+    if message == {:x, :redirect},
       do: push_redirect(socket, to: "/"),
       else: assign(socket, before_message_handler_called: true)
   end
