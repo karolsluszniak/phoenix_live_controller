@@ -593,7 +593,7 @@ defmodule Phoenix.LiveController do
         do:
           unquote(__MODULE__)._mount(
             __MODULE__,
-            &__live_controller_before__/3,
+            &__live_controller_before__(&1, :action, &2, &3),
             params,
             session,
             socket
@@ -603,7 +603,7 @@ defmodule Phoenix.LiveController do
         do:
           unquote(__MODULE__)._handle_params(
             __MODULE__,
-            &__live_controller_before__/3,
+            &__live_controller_before__(&1, :action, &2, &3),
             params,
             url,
             socket
@@ -613,7 +613,7 @@ defmodule Phoenix.LiveController do
         do:
           unquote(__MODULE__)._handle_event(
             __MODULE__,
-            &__live_controller_before__/3,
+            &__live_controller_before__(&1, :event, &2, &3),
             event_string,
             params,
             socket
@@ -645,108 +645,103 @@ defmodule Phoenix.LiveController do
   end
 
   defmacro __before_compile__(env) do
-    build_handler_before(env.module) ++
-      [
-        quote do
-          Module.delete_attribute(__MODULE__, :action_handler)
-          Module.delete_attribute(__MODULE__, :event_handler)
-          Module.delete_attribute(__MODULE__, :message_handler)
-
-          @doc false
-          def __live_controller__(:actions), do: @actions
-          def __live_controller__(:events), do: @events
-          def __live_controller__(:messages), do: @messages
-
-          def handle_info(message, socket),
-            do:
-              unquote(__MODULE__)._handle_message(
-                __MODULE__,
-                &__live_controller_before__/3,
-                message,
-                socket
-              )
-
-          defp __live_controller_before__(_socket, name, _payload),
-            do: raise("Unknown live controller handler: #{inspect(name)}")
-        end
-      ]
-  end
-
-  defp build_handler_before(module) do
-    handlers =
-      (Module.get_attribute(module, :actions) |> Enum.map(&{&1, :action})) ++
-        (Module.get_attribute(module, :events) |> Enum.map(&{&1, :event})) ++
-        (Module.get_attribute(module, :messages) |> Enum.map(&{&1, :message}))
-
-    plugs = Module.get_attribute(module, :plugs)
-
-    Enum.map(handlers, fn {name, type} ->
-      quote do
-        defp __live_controller_before__(socket, unquote(name), payload) do
-          unquote(build_handler_plug_calls(name, type, plugs))
-        end
-      end
-    end)
-  end
-
-  defp build_handler_plug_calls(_, _, []) do
     quote do
-      socket
+      Module.delete_attribute(__MODULE__, :action_handler)
+      Module.delete_attribute(__MODULE__, :event_handler)
+      Module.delete_attribute(__MODULE__, :message_handler)
+
+      @doc false
+      def __live_controller__(:actions), do: @actions
+      def __live_controller__(:events), do: @events
+      def __live_controller__(:messages), do: @messages
+
+      def handle_info(message, socket),
+        do:
+          unquote(__MODULE__)._handle_message(
+            __MODULE__,
+            &__live_controller_before__(&1, :message, &2, &3),
+            message,
+            socket
+          )
+
+      unquote(build_before(env.module))
     end
   end
 
-  defp build_handler_plug_calls(name, type, plugs) do
-    plugs
-    |> Enum.map(fn {caller, args, conditions, target_mod, target_fun} ->
-      call = if args do
-        args = Enum.map(args, &prepare_plug_expression_ast(&1, caller))
-        quote(do: unquote(target_fun)(unquote_splicing(args)))
-      else
-        args = quote(do: [socket])
-        if target_mod,
-          do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
-          else: quote(do: unquote(target_fun)(unquote_splicing(args)))
-      end
+  defp build_before(module) do
+    plugs = Module.get_attribute(module, :plugs)
 
-      quote do
-        chain(socket, fn socket ->
-          unquote(build_plug_ast_vars(type, name))
-
-          if unquote(prepare_plug_expression_ast(conditions, caller)) do
-            unquote(call)
-          else
-            socket
-          end
-        end)
+    quote do
+      defp __live_controller_before__(socket, type, name, payload) do
+        unquote(build_plug_calls(plugs))
       end
-    end)
+    end
+  end
+
+  defp build_plug_calls([]) do
+    quote(do: socket)
+  end
+
+  defp build_plug_calls(plugs) do
+    plug_calls =
+      plugs
+      |> Enum.map(&build_plug_call/1)
+      |> chain_calls()
+
+    quote do
+      unquote(expose_plug_global_vars())
+      unquote(plug_calls)
+    end
+  end
+
+  defp build_plug_call({caller, args, conditions, target_mod, target_fun}) do
+    call = if args do
+      args = Enum.map(args, &prepare_plug_expression(&1, caller))
+      quote(do: unquote(target_fun)(unquote_splicing(args)))
+    else
+      args = quote(do: [socket])
+      if target_mod,
+        do: quote(do: unquote(target_mod).unquote(target_fun)(unquote_splicing(args))),
+        else: quote(do: unquote(target_fun)(unquote_splicing(args)))
+    end
+
+    quote do
+      chain(socket, fn socket ->
+        unquote(expose_plug_local_vars())
+        if unquote(prepare_plug_expression(conditions, caller)) do
+          unquote(call)
+        else
+          socket
+        end
+      end)
+    end
+  end
+
+  defp chain_calls(calls) do
+    calls
     |> Enum.reverse()
     |> Enum.reduce(fn
-      {{:., [], target}, [], [_socket | rem_args]}, last_socket ->
-        {{:., [], target}, [], [last_socket | rem_args]}
-
       {name, [], [_socket | rem_args]}, last_socket ->
         {name, [], [last_socket | rem_args]}
     end)
   end
 
-  defp build_plug_ast_vars(type, name) do
-    with_params = type in [:action, :event]
-    with_payload = type == :message
-    action = if type == :action, do: name
-    event = if type == :event, do: name
-    message = if type == :message, do: name
-
+  defp expose_plug_local_vars do
     quote do
       var!(socket) = socket
 
-      var!(params) = if unquote(with_params), do: payload
-      var!(payload) = if unquote(with_payload), do: payload
-      var!(action) = payload && unquote(action)
-      var!(event) = payload && unquote(event)
-      var!(message) = payload && unquote(message)
-
       var!(socket)
+    end
+  end
+
+  defp expose_plug_global_vars do
+    quote do
+      var!(params) = if type in [:action, :event], do: payload
+      var!(payload) = if type == :message, do: payload
+      var!(action) = if type == :action, do: name
+      var!(event) = if type == :event, do: name
+      var!(message) = if type == :message, do: name
+
       var!(params)
       var!(payload)
       var!(action)
@@ -755,13 +750,13 @@ defmodule Phoenix.LiveController do
     end
   end
 
-  defp prepare_plug_expression_ast(ast, caller) do
-    ast
-    |> remove_ast_vars_context([:params, :payload, :action, :event, :message, :socket])
+  defp prepare_plug_expression(expr, caller) do
+    expr
+    |> remove_vars_context([:params, :payload, :action, :event, :message, :socket])
     |> Macro.expand(caller)
   end
 
-  defp remove_ast_vars_context(ast, vars) do
+  defp remove_vars_context(ast, vars) do
     ast
     |> Macro.prewalk(nil, fn
       node = {var, meta, _}, nil ->
