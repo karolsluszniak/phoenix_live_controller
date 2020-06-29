@@ -2,6 +2,7 @@ defmodule Phoenix.LiveController.LiveViewCallbacks do
   @moduledoc false
 
   import Phoenix.LiveController
+  alias Phoenix.LiveController.ControllerState
 
   def mount(module, before_callback, params, session, socket) do
     action =

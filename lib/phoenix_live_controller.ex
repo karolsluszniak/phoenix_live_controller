@@ -484,6 +484,7 @@ defmodule Phoenix.LiveController do
   """
 
   alias Phoenix.LiveView.Socket
+  alias __MODULE__.{ControllerState}
 
   @doc ~S"""
   Invokes action handler for specific action.

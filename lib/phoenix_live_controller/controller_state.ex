@@ -1,4 +1,4 @@
-defmodule ControllerState do
+defmodule Phoenix.LiveController.ControllerState do
   @moduledoc """
   Embeds extra state in socket to facilitate Phoenix live controllers.
   """
