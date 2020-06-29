@@ -302,10 +302,6 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  When called after being mounted, action handler may also access the current live URL via the
-  `get_current_url/1` helper function. This is however not possible during the mounting (more on
-  that in docs for `get_current_url/1`).
-
   Note that an action handler will only be called once when mounting, even though native LiveView
   calls both `mount/3` and `handle_params/3` at that moment.
 
@@ -461,7 +457,27 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  ## Specifying LiveView options
+  ## Accessing current URL
+
+  Handlers and plugs may access the current live URL (previously passed by LiveView to
+  `c:Phoenix.LiveView.handle_params/3` callback) via the `get_current_url/1` helper function.
+
+  ## Specifying mount options
+
+  Mount options, such as `temporary_assigns`, may be specified for every action using the
+  `@action_mount_opts` annotation.
+
+      defmodule MyAppWeb.ArticleLive do
+        use MyAppWeb, :live_controller
+
+        @action_handler true
+        @action_mount_opts temporary_assigns: [articles: []]
+        def index(socket, _params) do
+          articles = Blog.list_articles()
+          assign(socket, articles: articles)
+        end
+
+  ## Specifying `use Phoenix.LiveView` options
 
   Any options that were previously passed to `use Phoenix.LiveView`, such as `:layout` or
   `:container`, may now be passed to `use Phoenix.LiveController`.
@@ -514,11 +530,7 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) ::
-              Socket.t()
-              | {:ok, Socket.t()}
-              | {:ok, Socket.t(), keyword()}
-              | {:noreply, Socket.t()}
+            ) :: Socket.t() | {:noreply, Socket.t()}
 
   @doc ~S"""
   Invokes event handler for specific event.
@@ -532,7 +544,7 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) :: Socket.t() | {:ok, Socket.t()}
+            ) :: Socket.t() | {:noreply, Socket.t()}
 
   @doc ~S"""
   Invokes message handler for specific message.
@@ -566,6 +578,7 @@ defmodule Phoenix.LiveController do
       @behaviour unquote(__MODULE__)
 
       Module.register_attribute(__MODULE__, :actions, accumulate: true)
+      Module.register_attribute(__MODULE__, :actions_mount_opts, accumulate: true)
       Module.register_attribute(__MODULE__, :events, accumulate: true)
       Module.register_attribute(__MODULE__, :messages, accumulate: true)
       Module.register_attribute(__MODULE__, :plugs, accumulate: true)
@@ -581,7 +594,6 @@ defmodule Phoenix.LiveController do
         do:
           Phoenix.LiveController.LiveViewCallbacks.mount(
             __MODULE__,
-            &__live_controller_before__(&1, :action, &2, &3),
             params,
             session,
             socket
@@ -636,6 +648,7 @@ defmodule Phoenix.LiveController do
 
       @doc false
       def __live_controller__(:actions), do: @actions
+      def __live_controller__(:action_mount_opts), do: @actions_mount_opts
       def __live_controller__(:events), do: @events
       def __live_controller__(:messages), do: @messages
 
@@ -655,9 +668,19 @@ defmodule Phoenix.LiveController do
   end
 
   def __on_definition__(env, _kind, name, _args, _guards, _body) do
-    pull_handler_attribute(env.module, :action_handler, :actions, name)
+    action = pull_handler_attribute(env.module, :action_handler, :actions, name)
     pull_handler_attribute(env.module, :event_handler, :events, name)
     pull_handler_attribute(env.module, :message_handler, :messages, name)
+
+    if action do
+      action_mount_opts = Module.delete_attribute(env.module, :action_mount_opts)
+      actions_mount_opts = Module.get_attribute(env.module, :actions_mount_opts)
+      added = Enum.any?(actions_mount_opts, fn {for_action, _} -> for_action == action end)
+
+      unless added do
+        Module.put_attribute(env.module, :actions_mount_opts, {action, action_mount_opts})
+      end
+    end
   end
 
   defp pull_handler_attribute(module, source_attr, target_attr, name) do
@@ -665,6 +688,9 @@ defmodule Phoenix.LiveController do
          current_names = Module.get_attribute(module, target_attr),
          false <- Enum.member?(current_names, name) do
       Module.put_attribute(module, target_attr, name)
+      name
+    else
+      _ -> nil
     end
   end
 
@@ -721,13 +747,8 @@ defmodule Phoenix.LiveController do
 
   @doc ~S"""
   Returns the mounted live controller's URL with query params.
-
-  Note that for every first execution of action handler (i.e. for when `mounted?(socket)` returns
-  false) the returned URL will be nil. This is because the action handler first runs before the live
-  view passes the URL to the `c:Phoenix.LiveView.handle_params/3` (in order to get a chance to
-  return extra options such as `temporary_assigns`).
   """
-  @spec get_current_url(socket :: Socket.t()) :: String.t() | nil
+  @spec get_current_url(socket :: Socket.t()) :: String.t()
   def get_current_url(%{__struct__: Socket, controller: %ControllerState{url: url}}), do: url
 
   @doc ~S"""

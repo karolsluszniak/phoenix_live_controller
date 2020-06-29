@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+### Enhancements
+
+- Allow to specify action mount options via the `@action_mount_opts` annotation
+- Make current URL always available, even during first action handling, for consistency
+- Make handler response always be `socket` or `{:noreply, socket}`, even during first action
+  handling, for consistency
+
+### Backwards incompatible changes
+
+- Action handlers that have previously returned `{:ok, socket}` or `{:ok, socket, opts}` should now
+  return `{:noreply, socket}` and specify opts via the `@action_mount_opts` annotation
+
 ## 0.5.0
 
 ### Enhancements

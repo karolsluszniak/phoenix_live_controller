@@ -104,10 +104,7 @@ defmodule SampleLive do
   def action_handler(socket, name, params) do
     socket
     |> super(name, params)
-    |> case do
-      {:ok, socket, opts} -> {:ok, assign(socket, :action_handler_override, true), opts}
-      socket -> assign(socket, :action_handler_override, true)
-    end
+    |> assign(:action_handler_override, true)
   end
 
   @impl true
@@ -130,9 +127,9 @@ defmodule SampleLive do
   end
 
   @action_handler true
+  @action_mount_opts temporary_assigns: [items: []]
   def index_with_opts(socket, params) do
-    socket = assign(socket, items: [params["first_item"], :second])
-    {:ok, socket, temporary_assigns: [items: []]}
+    assign(socket, items: [params["first_item"], :second])
   end
 
   @event_handler true

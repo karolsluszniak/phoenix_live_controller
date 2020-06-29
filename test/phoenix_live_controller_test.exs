@@ -7,7 +7,8 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :index)
 
-    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "first"}, "", socket)
     assert socket.assigns.items == ["first", :second]
     assert socket.assigns.global_plug_called
     assert %{other_global_plug_called: :arg} = socket.assigns
@@ -19,6 +20,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SimpleLive.mount(%{}, %{}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
   end
 
   test "mounting actions with options" do
@@ -26,7 +28,8 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :index_with_opts)
 
-    assert {:ok, socket, opts} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
+    assert {:ok, socket, opts} = SampleLive.mount(%{}, %{}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "first"}, "", socket)
     assert opts[:temporary_assigns] == [items: []]
     refute Map.has_key?(socket.assigns, :other_global_plug_called)
   end
@@ -75,18 +78,19 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :index)
 
-    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     refute Phoenix.LiveController.mounted?(socket)
-
-    # first call to handle_params should mark socket as mounted without invoking action handler
-    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "x"}, "", socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "first"}, "", socket)
     assert Phoenix.LiveController.mounted?(socket)
     assert socket.assigns.items == ["first", :second]
 
-    # further calls should work as expected
     assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "x"}, "", socket)
     assert Phoenix.LiveController.mounted?(socket)
     assert socket.assigns.items == ["x", :second]
+
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "y"}, "", socket)
+    assert Phoenix.LiveController.mounted?(socket)
+    assert socket.assigns.items == ["y", :second]
   end
 
   test "handling events" do
@@ -126,6 +130,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SampleLive.mount(%{}, %{"user" => "me"}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
     assert socket.assigns.user == "me"
   end
 
@@ -135,6 +140,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SampleLive.mount(%{}, %{"user" => "badguy"}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
     assert socket.redirected
     refute Map.has_key?(socket.assigns, :user)
   end
@@ -145,6 +151,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
     assert Map.has_key?(socket.assigns, :before_action_handler_called)
     assert Map.has_key?(socket.assigns, :before_action_handler_called_two)
 
@@ -161,7 +168,8 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :index)
 
-    assert {:ok, socket} = SampleLive.mount(%{"redirect" => "1"}, %{}, socket)
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{"redirect" => "1"}, "", socket)
     assert socket.redirected
     refute Map.has_key?(socket.assigns, :items)
     refute Map.has_key?(socket.assigns, :before_action_handler_called)
@@ -172,7 +180,8 @@ defmodule Phoenix.LiveControllerTest do
       %Phoenix.LiveView.Socket{}
       |> assign(live_action: :index)
 
-    assert {:ok, socket} = SampleLive.mount(%{"first_item" => "first"}, %{}, socket)
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+    assert {:noreply, socket} = SampleLive.handle_params(%{"first_item" => "first"}, "", socket)
     assert socket.assigns.action_handler_override
   end
 

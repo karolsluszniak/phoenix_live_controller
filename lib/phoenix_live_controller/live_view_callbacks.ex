@@ -4,7 +4,7 @@ defmodule Phoenix.LiveController.LiveViewCallbacks do
   import Phoenix.LiveController
   alias Phoenix.LiveController.ControllerState
 
-  def mount(module, before_callback, params, session, socket) do
+  def mount(module, _params, session, socket) do
     action =
       socket.assigns[:live_action] ||
         raise """
@@ -30,11 +30,12 @@ defmodule Phoenix.LiveController.LiveViewCallbacks do
 
         """)
 
+    opts = Keyword.fetch!(module.__live_controller__(:action_mount_opts), action)
+    wrapper = if opts, do: &{:ok, &1, opts}, else: &{:ok, &1}
+
     socket
     |> initialize_controller_state(session)
-    |> before_callback.(action, params)
-    |> chain(&module.action_handler(&1, action, params))
-    |> wrap_socket(&{:ok, &1})
+    |> wrap_socket(wrapper)
   end
 
   defp initialize_controller_state(%{controller: _}, _) do
@@ -53,16 +54,16 @@ defmodule Phoenix.LiveController.LiveViewCallbacks do
   def handle_params(module, before_callback, params, url, socket) do
     action = socket.assigns.live_action
 
-    unless mounted?(socket) do
-      socket
-      |> update_controller_state(mounted?: true, url: url)
-      |> wrap_socket(&{:noreply, &1})
-    else
-      socket
-      |> before_callback.(action, params)
-      |> chain(&module.action_handler(&1, action, params))
-      |> wrap_socket(&{:noreply, &1})
-    end
+    socket
+    |> update_controller_state(url: url)
+    |> before_callback.(action, params)
+    |> chain(&module.action_handler(&1, action, params))
+    |> update_controller_state(mounted?: true)
+    |> wrap_socket(&{:noreply, &1})
+  end
+
+  defp update_controller_state({:noreply, socket}, changes) do
+    {:noreply, update_controller_state(socket, changes)}
   end
 
   defp update_controller_state(socket, changes) do
