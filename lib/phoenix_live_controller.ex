@@ -156,8 +156,8 @@ defmodule Phoenix.LiveController do
         end
       end
 
-  Note that action handlers don't have to wrap the resulting socket in the `{:ok, socket}` tuple,
-  which also brings them closer to Phoenix controller actions.
+  Note that action handlers don't have to wrap the resulting socket in a tuple, which also brings
+  them closer to Phoenix controller actions.
 
   ## Handling events
 
@@ -728,8 +728,7 @@ defmodule Phoenix.LiveController do
   `Phoenix.LiveController`.
   """
   @spec chain(
-          socket ::
-            Socket.t() | {:ok, Socket.t()} | {:ok, Socket.t(), keyword()} | {:noreply, Socket.t()},
+          socket :: Socket.t() | {:noreply, Socket.t()},
           func :: function
         ) :: Socket.t()
   def chain(socket = %{redirected: nil}, func), do: func.(socket)
