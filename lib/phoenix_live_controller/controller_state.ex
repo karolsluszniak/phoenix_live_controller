@@ -5,6 +5,7 @@ defmodule Phoenix.LiveController.ControllerState do
 
   @type t() :: %__MODULE__{
           mounted?: boolean(),
+          reply_payload: term(),
           session: map(),
           url: String.t()
         }
@@ -14,6 +15,7 @@ defmodule Phoenix.LiveController.ControllerState do
   @enforce_keys [:mounted?, :session]
 
   defstruct mounted?: false,
+            reply_payload: nil,
             session: %{},
             url: nil
 end

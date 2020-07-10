@@ -183,8 +183,12 @@ defmodule Phoenix.LiveController do
         end
       end
 
+  Live views may also reply to client-side events, providing the reply payload. While regular live
+  views do this by returning the `{:reply, payload, socket}` tuple, live controllers may also use
+  the `reply/2` helper function to achieve the same result.
+
   Note that, consistently with action handlers, event handlers don't have to wrap the resulting
-  socket in the `{:noreply, socket}` tuple.
+  socket in `{:noreply, socket}` or `{:reply, payload, socket}` tuple.
 
   Also note that, as a security measure, LiveController won't convert binary names of events that
   don't have corresponding event handlers into atoms that wouldn't be garbage collected.
@@ -403,14 +407,14 @@ defmodule Phoenix.LiveController do
   > plug start_counter(socket) when connected?(socket) and not mounted?(socket)
   > ```
 
-  If multiple plugs are defined, they'll be called in a chain. If any of them redirects the socket
-  or returns a tuple instead of just socket then the chain will be halted, which will also prevent
-  action, event or message handler from being called.
+  If multiple plugs are defined, they'll be called in a chain. If any of them redirects the socket,
+  replies to event by calling `reply/2` or returns a tuple instead of just socket then the chain
+  will be halted, which will also prevent action, event or message handler from being called.
 
-  This is guaranteed by internal use of the `chain/2` function. This simple helper calls
-  any function that takes socket as argument & that returns it only if the socket wasn't previously
-  redirected or wrapped in a tuple and passes the socket through otherwise. It may also be used
-  inside a plug or handler code for a similar result:
+  This is guaranteed by internal use of the `chain/2` function. This simple helper calls any
+  function that takes socket as argument & that returns it only if the socket wasn't previously
+  redirected, marked for reply or wrapped in a tuple and passes the socket through otherwise. It may
+  also be used inside a plug or handler code for a similar result:
 
       defmodule MyAppWeb.ArticleLive do
         use MyAppWeb, :live_controller
@@ -544,7 +548,7 @@ defmodule Phoenix.LiveController do
               socket :: Socket.t(),
               name :: atom,
               params :: Socket.unsigned_params()
-            ) :: Socket.t() | {:noreply, Socket.t()}
+            ) :: Socket.t() | {:noreply, Socket.t()} | {:reply, term(), Socket.t()}
 
   @doc ~S"""
   Invokes message handler for specific message.
@@ -722,17 +726,19 @@ defmodule Phoenix.LiveController do
   defp extract_when(other), do: {other, true}
 
   @doc ~S"""
-  Calls given function if socket wasn't redirected, passes the socket through otherwise.
+  Calls given function if socket wasn't redirected, marked for reply or wrapped in a tuple.
 
   Read more about the role that this function plays in the live controller pipeline in docs for
   `Phoenix.LiveController`.
   """
   @spec chain(
-          socket :: Socket.t() | {:noreply, Socket.t()},
+          socket :: Socket.t() | {:noreply, Socket.t()} | {:reply, term(), Socket.t()},
           func :: function
         ) :: Socket.t()
-  def chain(socket = %{redirected: nil}, func), do: func.(socket)
-  def chain(halted_socket, _func), do: halted_socket
+  def chain(socket = %{redirected: nil, controller: %{reply_payload: nil}}, func),
+    do: func.(socket)
+
+  def chain(redirected_or_wrapped_or_with_reply, _func), do: redirected_or_wrapped_or_with_reply
 
   @doc ~S"""
   Returns true if the socket was previously mounted by action handler.
@@ -767,4 +773,15 @@ defmodule Phoenix.LiveController do
   """
   @spec get_session(socket :: Socket.t(), String.t() | atom()) :: any()
   def get_session(socket, key), do: get_session(socket) |> Map.get(to_string(key))
+
+  @doc ~S"""
+  Attaches payload to the socket that will be passed to client-side as the event reply.
+  """
+  @spec reply(socket :: Socket.t(), payload :: term()) :: Socket.t()
+  def reply(
+        socket = %{__struct__: Socket, controller: %ControllerState{} = controller_state},
+        payload
+      ) do
+    Map.put(socket, :controller, Map.put(controller_state, :reply_payload, payload))
+  end
 end

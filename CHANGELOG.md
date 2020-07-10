@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.6.0
+## 0.7.0-dev
+
+### Enhancements
+
+- Introduce `reply/2` for replying to client-side events (feature added in Phoenix.LiveView v0.14)
+- Improve errors when replying in non-event handlers
+- Improve errors when returning invalid response from a plug or a handler
+- Improve errors when passing non-mounted socket e.g. in tests
+
+## 0.6.0 (2020-06-29)
 
 ### Enhancements
 
@@ -14,7 +23,7 @@
 - Action handlers that have previously returned `{:ok, socket}` or `{:ok, socket, opts}` should now
   return `{:noreply, socket}` and specify opts via the `@action_mount_opts` annotation
 
-## 0.5.0
+## 0.5.0 (2020-06-26)
 
 ### Enhancements
 
@@ -32,20 +41,20 @@
 - `plug/2` variant with options as second argument is removed in favor of a more flexible (and less
   confusing when mixed with `when`) function call syntax
 
-## 0.4.2
+## 0.4.2 (2020-06-25)
 
 ### Bug fixes
 
 - Fix error when no handlers defined in live controller
 - Fix duplicate handlers & related warning for handlers with multiple clauses
 
-## 0.4.1
+## 0.4.1 (2020-06-25)
 
 ### Bug fixes
 
 - Fix binding to special variables (`action`, `params`...) when plug call is quoted
 
-## 0.4.0
+## 0.4.0 (2020-06-25)
 
 ### Enhancements
 
