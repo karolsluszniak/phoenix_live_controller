@@ -111,7 +111,10 @@ defmodule SampleLive do
   def event_handler(socket, name, params) do
     socket
     |> super(name, params)
-    |> assign(:event_handler_override, true)
+    |> case do
+      :bad_resp -> :bad_resp
+      socket -> assign(socket, :event_handler_override, true)
+    end
   end
 
   @impl true
@@ -127,6 +130,13 @@ defmodule SampleLive do
   end
 
   @action_handler true
+  def index_reply(socket, params) do
+    socket
+    |> assign(items: [params["first_item"], :second])
+    |> reply(:asd)
+  end
+
+  @action_handler true
   @action_mount_opts temporary_assigns: [items: []]
   def index_with_opts(socket, params) do
     assign(socket, items: [params["first_item"], :second])
@@ -135,6 +145,29 @@ defmodule SampleLive do
   @event_handler true
   def create(socket, params) do
     assign(socket, items: socket.assigns.items ++ [params["new_item"]])
+  end
+
+  @event_handler true
+  def create_reply(socket, params) do
+    socket
+    |> assign(items: socket.assigns.items ++ [params["new_item"]])
+    |> reply(:some_reply)
+  end
+
+  plug :before_create_reply_plug when event == :create_reply_plug
+
+  @event_handler true
+  def create_reply_plug(_socket, _params) do
+    raise "will never raise"
+  end
+
+  defp before_create_reply_plug(socket) do
+    {:reply, :other_reply, socket}
+  end
+
+  @event_handler true
+  def create_bad_resp(_socket, _params) do
+    :bad_resp
   end
 
   @message_handler true

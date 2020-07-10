@@ -8,4 +8,5 @@ defmodule Phoenix.LiveController.Plug do
               | {:ok, Socket.t()}
               | {:ok, Socket.t(), keyword()}
               | {:noreply, Socket.t()}
+              | {:reply, term(), Socket.t()}
 end

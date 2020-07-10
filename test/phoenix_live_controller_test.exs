@@ -93,13 +93,134 @@ defmodule Phoenix.LiveControllerTest do
     assert socket.assigns.items == ["y", :second]
   end
 
+  test "patching params with non-mounted socket" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    expected_error = """
+    SampleLive unexpectedly received socket without controller state when handling
+    action index.
+
+    This means that one of LiveView callbacks was called with a socket that wasn't previously
+    mounted by a live controller. If this has happened during testing, please first call mount/3
+    with your socket and then use socket returned from mount for subsequent LiveView calls.
+
+    """
+
+    assert_raise RuntimeError, expected_error, fn ->
+      SampleLive.handle_params(%{}, "", socket)
+    end
+  end
+
+  test "patching params with a reply" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index_reply)
+
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+
+    expected_error = """
+    SampleLive unexpectedly replied when handling action index_reply.
+
+    You can only reply when handling events (with {:reply, payload, socket} or by calling reply/2).
+
+    """
+
+    assert_raise RuntimeError, expected_error, fn ->
+      SampleLive.handle_params(%{}, "", socket)
+    end
+  end
+
   test "handling events" do
     socket =
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_event("create", %{"new_item" => "new"}, socket)
     assert socket.assigns.items == [:old, "new"]
+  end
+
+  test "handling events with reply" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(items: [:old])
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+
+    assert {:reply, :some_reply, socket} =
+             SampleLive.handle_event(
+               "create_reply",
+               %{"new_item" => "new"},
+               socket
+             )
+
+    assert socket.assigns.items == [:old, "new"]
+    assert socket.controller.reply_payload == nil
+  end
+
+  test "handling events with tuple reply in plug" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(items: [:old])
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
+
+    assert {:reply, :other_reply, socket} =
+             SampleLive.handle_event(
+               "create_reply_plug",
+               %{"new_item" => "new"},
+               socket
+             )
+
+    assert socket.assigns.items == [:old]
+    assert socket.controller.reply_payload == nil
+  end
+
+  test "handling events with non-mounted socket" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    expected_error = """
+    SampleLive unexpectedly received socket without controller state when handling
+    event create.
+
+    This means that one of LiveView callbacks was called with a socket that wasn't previously
+    mounted by a live controller. If this has happened during testing, please first call mount/3
+    with your socket and then use socket returned from mount for subsequent LiveView calls.
+
+    """
+
+    assert_raise RuntimeError, expected_error, fn ->
+      SampleLive.handle_event("create", %{"new_item" => "new"}, socket)
+    end
+  end
+
+  test "handling events with bad response" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{}, %{"user" => "me"}, socket)
+
+    expected_error = """
+    SampleLive returned unexpected value when handling event create_bad_resp:
+
+    :bad_resp
+
+    You can only return socket, optionally wrapped in {:noreply, socket} tuple
+    or, when handling events, in {:reply, payload, socket} tuple.
+
+    """
+
+    assert_raise RuntimeError, expected_error, fn ->
+      SampleLive.handle_event("create_bad_resp", %{}, socket)
+    end
   end
 
   test "handling undefined events" do
@@ -189,7 +310,9 @@ defmodule Phoenix.LiveControllerTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_event("create", %{"new_item" => "new"}, socket)
     assert Map.has_key?(socket.assigns, :before_event_handler_called)
     assert socket.assigns.global_plug_called == {:create, %{"new_item" => "new"}}
@@ -199,6 +322,9 @@ defmodule Phoenix.LiveControllerTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
 
     assert {:noreply, socket} =
              SampleLive.handle_event("create", %{"new_item" => "new", "redirect" => "1"}, socket)
@@ -213,14 +339,19 @@ defmodule Phoenix.LiveControllerTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> assign(items: [:old])
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_event("create", %{"new_item" => "new"}, socket)
     assert socket.assigns.event_handler_override
   end
 
   test "pipelines: before message handler" do
-    socket = %Phoenix.LiveView.Socket{}
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
     assert socket.assigns[:called]
     assert Map.has_key?(socket.assigns, :before_message_handler_called)
@@ -229,8 +360,11 @@ defmodule Phoenix.LiveControllerTest do
   end
 
   test "pipelines: before message handler redirected" do
-    socket = %Phoenix.LiveView.Socket{}
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_info({:x, :redirect}, socket)
     assert socket.redirected
     refute socket.assigns[:called]
@@ -238,8 +372,11 @@ defmodule Phoenix.LiveControllerTest do
   end
 
   test "pipelines: overriding message handler" do
-    socket = %Phoenix.LiveView.Socket{}
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
     assert socket.assigns.message_handler_override
   end
@@ -248,6 +385,9 @@ defmodule Phoenix.LiveControllerTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> assign(:called, false)
+      |> assign(live_action: :index)
+
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
 
     redirected_socket =
       socket
@@ -262,10 +402,33 @@ defmodule Phoenix.LiveControllerTest do
   end
 
   test "handling messages" do
-    socket = %Phoenix.LiveView.Socket{}
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
 
+    assert {:ok, socket} = SampleLive.mount(%{}, %{}, socket)
     assert {:noreply, socket} = SampleLive.handle_info(:x, socket)
     assert socket.assigns.called == true
+  end
+
+  test "handling messages with non-mounted socket" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> assign(live_action: :index)
+
+    expected_error = """
+    SampleLive unexpectedly received socket without controller state when handling
+    message with key x.
+
+    This means that one of LiveView callbacks was called with a socket that wasn't previously
+    mounted by a live controller. If this has happened during testing, please first call mount/3
+    with your socket and then use socket returned from mount for subsequent LiveView calls.
+
+    """
+
+    assert_raise RuntimeError, expected_error, fn ->
+      SampleLive.handle_info(:x, socket)
+    end
   end
 
   test "handling undefined messages" do
