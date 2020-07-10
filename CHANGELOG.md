@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0-dev
+## 0.7.0 (2020-07-10)
 
 ### Enhancements
 
