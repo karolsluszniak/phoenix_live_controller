@@ -20,7 +20,7 @@ defmodule Phoenix.LiveControllerTest do
       |> assign(live_action: :index)
 
     assert {:ok, socket} = SimpleLive.mount(%{}, %{}, socket)
-    assert {:noreply, socket} = SampleLive.handle_params(%{}, "", socket)
+    assert {:noreply, _socket} = SampleLive.handle_params(%{}, "", socket)
   end
 
   test "mounting actions with options" do
