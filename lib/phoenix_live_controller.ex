@@ -569,13 +569,6 @@ defmodule Phoenix.LiveController do
                       message_handler: 3
 
   defmacro __using__(opts) do
-    view_module =
-      __CALLER__.module
-      |> to_string()
-      |> String.replace(~r/(Live|LiveController)$/, "")
-      |> Kernel.<>("View")
-      |> String.to_atom()
-
     quote do
       use Phoenix.LiveView, unquote(opts)
 
@@ -624,7 +617,7 @@ defmodule Phoenix.LiveController do
           )
 
       def render(assigns = %{live_action: action}),
-        do: unquote(view_module).render("#{action}.html", assigns)
+        do: view_module().render("#{action}.html", assigns)
 
       # Default implementations of Phoenix.LiveController callbacks
 
@@ -637,10 +630,18 @@ defmodule Phoenix.LiveController do
       def message_handler(socket, name, message),
         do: apply(__MODULE__, name, [socket, message])
 
+      def view_module,
+        do:
+          __MODULE__
+          |> to_string()
+          |> String.replace(~r/(Live|LiveController|Controller)?$/, "View", global: false)
+          |> String.to_existing_atom()
+
       defoverridable action_handler: 3,
                      event_handler: 3,
                      message_handler: 3,
-                     render: 1
+                     render: 1,
+                     view_module: 0
     end
   end
 
